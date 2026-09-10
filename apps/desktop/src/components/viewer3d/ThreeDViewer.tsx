@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ElementRef,
+} from "react";
 import { Canvas as ThreeCanvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
@@ -40,11 +47,47 @@ import { MarcherAppearanceByIdMap } from "@/hooks/queries/useMarcherAppearances"
 import LightingRig from "./LightingRig";
 import StadiumEnvironment from "./StadiumEnvironment";
 import { STORYBOOK_RENDERING, STORYBOOK_THEME } from "./sceneTheme";
+import { getMarcherDetailDistance } from "./instrumentCatalog";
+import {
+    DEFAULT_VIEWER_3D_PREFERENCES,
+    type InstrumentFinish,
+    type UniformStyle,
+} from "./viewer3d.types";
 
 const CAMERA_LABELS: Record<CameraPreset, string> = {
     overhead: "Overhead",
     pressBox: "Press box",
     fieldLevel: "Field level",
+};
+
+const VIEWER_PREFERENCES_KEY = "openmarch-3d-viewer-preferences";
+
+const loadViewerPreferences = () => {
+    try {
+        const saved = window.localStorage.getItem(VIEWER_PREFERENCES_KEY);
+        if (!saved) return DEFAULT_VIEWER_3D_PREFERENCES;
+        const parsed = JSON.parse(saved) as Partial<
+            typeof DEFAULT_VIEWER_3D_PREFERENCES
+        >;
+        return {
+            uniformStyle: ["classic", "modern", "summer"].includes(
+                parsed.uniformStyle ?? "",
+            )
+                ? (parsed.uniformStyle as UniformStyle)
+                : DEFAULT_VIEWER_3D_PREFERENCES.uniformStyle,
+            instrumentFinish: ["brass", "silver"].includes(
+                parsed.instrumentFinish ?? "",
+            )
+                ? (parsed.instrumentFinish as InstrumentFinish)
+                : DEFAULT_VIEWER_3D_PREFERENCES.instrumentFinish,
+            showCrowd:
+                typeof parsed.showCrowd === "boolean"
+                    ? parsed.showCrowd
+                    : DEFAULT_VIEWER_3D_PREFERENCES.showCrowd,
+        };
+    } catch {
+        return DEFAULT_VIEWER_3D_PREFERENCES;
+    }
 };
 
 interface CameraRigProps {
@@ -53,32 +96,106 @@ interface CameraRigProps {
     fieldDepth: number;
 }
 
+interface CameraTransition {
+    elapsed: number;
+    duration: number;
+    fromPosition: THREE.Vector3;
+    toPosition: THREE.Vector3;
+    fromTarget: THREE.Vector3;
+    toTarget: THREE.Vector3;
+    fromFov: number;
+    toFov: number;
+}
+
 function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
     const { camera } = useThree();
+    const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
+    const transitionRef = useRef<CameraTransition | null>(null);
+    const initializedRef = useRef(false);
     const configuration = useMemo(
         () => getCameraPresetConfiguration(preset, fieldWidth, fieldDepth),
         [fieldDepth, fieldWidth, preset],
     );
 
     useEffect(() => {
-        camera.position.set(...configuration.position);
-        camera.lookAt(...configuration.target);
-        if (camera instanceof THREE.PerspectiveCamera) {
+        const controls = controlsRef.current;
+        if (!controls || !(camera instanceof THREE.PerspectiveCamera)) return;
+
+        camera.near = 0.1;
+        camera.far = Math.max(fieldWidth, fieldDepth) * 12;
+
+        if (!initializedRef.current) {
+            camera.position.set(...configuration.position);
             camera.fov = configuration.fov;
-            camera.near = 0.1;
-            camera.far = Math.max(fieldWidth, fieldDepth) * 12;
+            controls.target.set(...configuration.target);
             camera.updateProjectionMatrix();
+            controls.update();
+            initializedRef.current = true;
+            return;
         }
+
+        transitionRef.current = {
+            elapsed: 0,
+            duration: 0.72,
+            fromPosition: camera.position.clone(),
+            toPosition: new THREE.Vector3(...configuration.position),
+            fromTarget: controls.target.clone(),
+            toTarget: new THREE.Vector3(...configuration.target),
+            fromFov: camera.fov,
+            toFov: configuration.fov,
+        };
     }, [camera, configuration, fieldDepth, fieldWidth]);
+
+    useFrame((_, delta) => {
+        const transition = transitionRef.current;
+        const controls = controlsRef.current;
+        if (
+            !transition ||
+            !controls ||
+            !(camera instanceof THREE.PerspectiveCamera)
+        )
+            return;
+
+        transition.elapsed = Math.min(
+            transition.duration,
+            transition.elapsed + delta,
+        );
+        const progress = transition.elapsed / transition.duration;
+        const eased = progress * progress * (3 - 2 * progress);
+
+        camera.position.lerpVectors(
+            transition.fromPosition,
+            transition.toPosition,
+            eased,
+        );
+        controls.target.lerpVectors(
+            transition.fromTarget,
+            transition.toTarget,
+            eased,
+        );
+        camera.fov = THREE.MathUtils.lerp(
+            transition.fromFov,
+            transition.toFov,
+            eased,
+        );
+        camera.updateProjectionMatrix();
+        controls.update();
+
+        if (progress >= 1) transitionRef.current = null;
+    });
 
     return (
         <OrbitControls
-            key={preset}
+            ref={controlsRef}
             makeDefault
-            target={configuration.target}
             enablePan
             enableRotate
             enableZoom
+            enableDamping
+            dampingFactor={0.08}
+            onStart={() => {
+                transitionRef.current = null;
+            }}
             screenSpacePanning
             minDistance={2}
             maxDistance={Math.max(fieldWidth, fieldDepth) * 4}
@@ -93,6 +210,8 @@ interface MarcherFormationProps {
     marcherTimelines: Map<number, MarcherTimeline>;
     marcherAppearances: MarcherAppearanceByIdMap;
     fieldProperties: FieldProperties;
+    uniformStyle: UniformStyle;
+    instrumentFinish: InstrumentFinish;
 }
 
 function MarcherFormation({
@@ -101,9 +220,12 @@ function MarcherFormation({
     marcherTimelines,
     marcherAppearances,
     fieldProperties,
+    uniformStyle,
+    instrumentFinish,
 }: MarcherFormationProps) {
     const marcherRefs = useRef(new Map<number, THREE.Group>());
     const { isPlaying } = useIsPlaying()!;
+    const detailDistance = getMarcherDetailDistance(marchers.length);
 
     const setPausedPositions = useCallback(() => {
         for (const marcher of marchers) {
@@ -174,8 +296,12 @@ function MarcherFormation({
                         <Marcher3D
                             marcherId={marcher.id}
                             drillNumber={marcher.drill_number}
+                            section={marcher.section}
                             color={rgbaStringToThreeColor(appearance.fillRgba)}
                             labelVisible={appearance.textVisible}
+                            uniformStyle={uniformStyle}
+                            instrumentFinish={instrumentFinish}
+                            detailDistance={detailDistance}
                         />
                     </group>
                 );
@@ -186,6 +312,7 @@ function MarcherFormation({
 
 export default function ThreeDViewer() {
     const [cameraPreset, setCameraPreset] = useState<CameraPreset>("pressBox");
+    const [preferences, setPreferences] = useState(loadViewerPreferences);
     const databaseReady = useDatabaseReady();
     const queryClient = useQueryClient();
     const { selectedPage } = useSelectedPage()!;
@@ -214,6 +341,13 @@ export default function ThreeDViewer() {
     );
     const { data: marcherTimelines } = useManyCoordinateData(nearbyPages);
 
+    useEffect(() => {
+        window.localStorage.setItem(
+            VIEWER_PREFERENCES_KEY,
+            JSON.stringify(preferences),
+        );
+    }, [preferences]);
+
     if (!fieldProperties || !selectedPage) {
         return (
             <div className="bg-bg-2 text-text flex h-full w-full items-center justify-center">
@@ -228,8 +362,13 @@ export default function ThreeDViewer() {
         <div className="bg-bg-2 rounded-6 relative h-full w-full overflow-hidden">
             <ThreeCanvas
                 shadows="basic"
-                dpr={[1, 2]}
-                gl={{ antialias: true, alpha: false }}
+                dpr={[1, 1.5]}
+                performance={{ min: 0.6 }}
+                gl={{
+                    antialias: true,
+                    alpha: false,
+                    powerPreference: "high-performance",
+                }}
                 camera={{ fov: 43 }}
             >
                 <fog
@@ -241,7 +380,11 @@ export default function ThreeDViewer() {
                     ]}
                 />
                 <LightingRig fieldWidth={width} fieldDepth={depth} />
-                <StadiumEnvironment fieldWidth={width} fieldDepth={depth} />
+                <StadiumEnvironment
+                    fieldWidth={width}
+                    fieldDepth={depth}
+                    showCrowd={preferences.showCrowd}
+                />
                 <Field3D
                     fieldProperties={fieldProperties}
                     showGrid={uiSettings.gridLines}
@@ -253,6 +396,8 @@ export default function ThreeDViewer() {
                     marcherTimelines={marcherTimelines}
                     marcherAppearances={marcherAppearances}
                     fieldProperties={fieldProperties}
+                    uniformStyle={preferences.uniformStyle}
+                    instrumentFinish={preferences.instrumentFinish}
                 />
                 <CameraRig
                     preset={cameraPreset}
@@ -261,32 +406,96 @@ export default function ThreeDViewer() {
                 />
             </ThreeCanvas>
 
-            <div
-                className="border-stroke bg-bg-1/90 absolute top-6 right-6 z-10 flex gap-2 rounded-lg border p-2 shadow-lg backdrop-blur-sm"
-                aria-label="3D camera preset"
-            >
-                {(Object.keys(CAMERA_LABELS) as CameraPreset[]).map(
-                    (preset) => (
-                        <button
-                            key={preset}
-                            type="button"
-                            aria-pressed={cameraPreset === preset}
-                            onClick={() => setCameraPreset(preset)}
-                            className={clsx(
-                                "rounded-6 px-10 py-6 text-sm transition-colors",
-                                cameraPreset === preset
-                                    ? "bg-fg-2 text-accent"
-                                    : "text-text hover:bg-fg-2",
-                            )}
+            <div className="absolute top-6 right-6 z-10 flex max-w-[calc(100%_-_3rem)] flex-col items-end gap-3">
+                <div
+                    className="border-stroke bg-bg-1/90 flex gap-2 rounded-lg border p-2 shadow-lg backdrop-blur-sm"
+                    aria-label="3D camera preset"
+                >
+                    {(Object.keys(CAMERA_LABELS) as CameraPreset[]).map(
+                        (preset) => (
+                            <button
+                                key={preset}
+                                type="button"
+                                aria-pressed={cameraPreset === preset}
+                                onClick={() => setCameraPreset(preset)}
+                                className={clsx(
+                                    "rounded-6 px-10 py-6 text-sm transition-colors",
+                                    cameraPreset === preset
+                                        ? "bg-fg-2 text-accent"
+                                        : "text-text hover:bg-fg-2",
+                                )}
+                            >
+                                {CAMERA_LABELS[preset]}
+                            </button>
+                        ),
+                    )}
+                </div>
+
+                <div
+                    className="border-stroke bg-bg-1/90 text-text flex flex-wrap items-end gap-4 rounded-lg border px-4 py-3 text-xs shadow-lg backdrop-blur-sm"
+                    aria-label="3D scene style"
+                >
+                    <label className="flex flex-col gap-1">
+                        <span className="text-text/70">Uniform</span>
+                        <select
+                            value={preferences.uniformStyle}
+                            onChange={(event) =>
+                                setPreferences((current) => ({
+                                    ...current,
+                                    uniformStyle: event.target
+                                        .value as UniformStyle,
+                                }))
+                            }
+                            className="border-stroke bg-bg-2 rounded-4 border px-3 py-2"
                         >
-                            {CAMERA_LABELS[preset]}
-                        </button>
-                    ),
-                )}
+                            <option value="classic">Classic</option>
+                            <option value="modern">Modern</option>
+                            <option value="summer">Summer</option>
+                        </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                        <span className="text-text/70">Instrument finish</span>
+                        <select
+                            value={preferences.instrumentFinish}
+                            onChange={(event) =>
+                                setPreferences((current) => ({
+                                    ...current,
+                                    instrumentFinish: event.target
+                                        .value as InstrumentFinish,
+                                }))
+                            }
+                            className="border-stroke bg-bg-2 rounded-4 border px-3 py-2"
+                        >
+                            <option value="brass">Brass</option>
+                            <option value="silver">Silver</option>
+                        </select>
+                    </label>
+
+                    <button
+                        type="button"
+                        aria-pressed={preferences.showCrowd}
+                        onClick={() =>
+                            setPreferences((current) => ({
+                                ...current,
+                                showCrowd: !current.showCrowd,
+                            }))
+                        }
+                        className={clsx(
+                            "rounded-4 border px-4 py-2 transition-colors",
+                            preferences.showCrowd
+                                ? "border-accent bg-fg-2 text-accent"
+                                : "border-stroke hover:bg-fg-2",
+                        )}
+                    >
+                        Crowd {preferences.showCrowd ? "on" : "off"}
+                    </button>
+                </div>
             </div>
 
             <p className="bg-bg-1/80 text-text/80 pointer-events-none absolute bottom-6 left-6 rounded-md px-8 py-4 text-xs backdrop-blur-sm">
-                Drag to orbit · right-drag to pan · scroll to zoom
+                Instruments follow each marcher&apos;s section · drag to orbit ·
+                right-drag to pan · scroll to zoom
             </p>
         </div>
     );

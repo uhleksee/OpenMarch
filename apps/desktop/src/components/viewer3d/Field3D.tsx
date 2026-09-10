@@ -6,6 +6,7 @@ import {
     getFieldWorldDimensions,
 } from "./viewer3d.utils";
 import { STORYBOOK_THEME } from "./sceneTheme";
+import FieldNumbers from "./FieldNumbers";
 
 interface Field3DProps {
     fieldProperties: FieldProperties;
@@ -204,6 +205,7 @@ export default function Field3D({
             <lineSegments geometry={checkpointGeometry}>
                 <lineBasicMaterial color={STORYBOOK_THEME.line} />
             </lineSegments>
+            <FieldNumbers fieldProperties={fieldProperties} />
         </group>
     );
 }

@@ -6,6 +6,7 @@ import {
     getFieldWorldDimensions,
     rgbaStringToThreeColor,
 } from "../viewer3d.utils";
+import { getFieldNumberMarkers } from "../FieldNumbers";
 
 describe("3D viewer coordinate utilities", () => {
     const field = FieldPropertiesTemplates.COLLEGE_FOOTBALL_FIELD_NO_END_ZONES;
@@ -48,6 +49,15 @@ describe("3D viewer coordinate utilities", () => {
     it("converts schema RGBA colors for Three.js materials", () => {
         expect(rgbaStringToThreeColor("rgba(12,34,56,0.5)")).toBe(
             "rgb(12, 34, 56)",
+        );
+    });
+
+    it("builds field numbers from the existing field template", () => {
+        const markers = getFieldNumberMarkers(field);
+        expect(markers).toHaveLength(18);
+        expect(markers.some((marker) => marker.label === "50")).toBe(true);
+        expect(markers.filter((marker) => marker.label === "50")).toHaveLength(
+            2,
         );
     });
 });

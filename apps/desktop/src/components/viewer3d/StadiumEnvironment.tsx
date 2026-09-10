@@ -1,11 +1,21 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { STORYBOOK_THEME } from "./sceneTheme";
+import { SKIN_TONES, STORYBOOK_THEME } from "./sceneTheme";
 
 interface StadiumEnvironmentProps {
     fieldWidth: number;
     fieldDepth: number;
+    showCrowd: boolean;
 }
+
+const CROWD_COLORS = [
+    "#f3d36a",
+    "#e97d68",
+    "#6b9ac4",
+    "#8ab17d",
+    "#9b7bb5",
+    "#f1ede2",
+] as const;
 
 const SKY_VERTEX_SHADER = `
     varying vec3 worldPosition;
@@ -116,16 +126,89 @@ function Tree({
     );
 }
 
+function Crowd({ width, facing }: { width: number; facing: 1 | -1 }) {
+    const bodyRef = useRef<THREE.InstancedMesh>(null);
+    const headRef = useRef<THREE.InstancedMesh>(null);
+    const columns = Math.max(8, Math.floor(width / 2.15));
+    const rowCount = 5;
+    const count = columns * rowCount;
+
+    useEffect(() => {
+        const bodies = bodyRef.current;
+        const heads = headRef.current;
+        if (!bodies || !heads) return;
+
+        const dummy = new THREE.Object3D();
+        let instance = 0;
+        for (let row = 0; row < rowCount; row += 1) {
+            for (let column = 0; column < columns; column += 1) {
+                const x =
+                    -width / 2 +
+                    ((column + 0.5) / columns) * width +
+                    (row % 2 ? 0.12 : -0.12);
+                const bodyY = 0.78 + row * 0.54;
+                const z = facing * row * 0.7;
+
+                dummy.position.set(x, bodyY, z);
+                dummy.scale.set(0.44, 0.62, 0.34);
+                dummy.rotation.set(0, 0, 0);
+                dummy.updateMatrix();
+                bodies.setMatrixAt(instance, dummy.matrix);
+                bodies.setColorAt(
+                    instance,
+                    new THREE.Color(
+                        CROWD_COLORS[(column + row * 3) % CROWD_COLORS.length],
+                    ),
+                );
+
+                dummy.position.set(x, bodyY + 0.55, z);
+                dummy.scale.setScalar(0.28);
+                dummy.updateMatrix();
+                heads.setMatrixAt(instance, dummy.matrix);
+                heads.setColorAt(
+                    instance,
+                    new THREE.Color(
+                        SKIN_TONES[(column * 2 + row) % SKIN_TONES.length],
+                    ),
+                );
+                instance += 1;
+            }
+        }
+
+        bodies.instanceMatrix.needsUpdate = true;
+        heads.instanceMatrix.needsUpdate = true;
+        if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
+        if (heads.instanceColor) heads.instanceColor.needsUpdate = true;
+        bodies.computeBoundingSphere();
+        heads.computeBoundingSphere();
+    }, [columns, facing, width]);
+
+    return (
+        <group>
+            <instancedMesh ref={bodyRef} args={[undefined, undefined, count]}>
+                <boxGeometry args={[1, 1, 1]} />
+                <meshToonMaterial vertexColors />
+            </instancedMesh>
+            <instancedMesh ref={headRef} args={[undefined, undefined, count]}>
+                <icosahedronGeometry args={[1, 1]} />
+                <meshToonMaterial vertexColors />
+            </instancedMesh>
+        </group>
+    );
+}
+
 function Bleachers({
     position,
     width,
     facing,
     withPressBox = false,
+    showCrowd,
 }: {
     position: [number, number, number];
     width: number;
     facing: 1 | -1;
     withPressBox?: boolean;
+    showCrowd: boolean;
 }) {
     return (
         <group position={position}>
@@ -164,6 +247,7 @@ function Bleachers({
                     </mesh>
                 </group>
             )}
+            {showCrowd && <Crowd width={width * 0.94} facing={facing} />}
         </group>
     );
 }
@@ -197,6 +281,7 @@ function LightPole({
 export default function StadiumEnvironment({
     fieldWidth,
     fieldDepth,
+    showCrowd,
 }: StadiumEnvironmentProps) {
     const largestDimension = Math.max(fieldWidth, fieldDepth);
     const treePositions = [
@@ -241,12 +326,14 @@ export default function StadiumEnvironment({
                 position={[0, 0, -fieldDepth / 2 - 9]}
                 width={fieldWidth * 0.62}
                 facing={-1}
+                showCrowd={showCrowd}
             />
             <Bleachers
                 position={[0, 0, fieldDepth / 2 + 9]}
                 width={fieldWidth * 0.72}
                 facing={1}
                 withPressBox
+                showCrowd={showCrowd}
             />
 
             {[-0.43, 0.43].flatMap((xFactor) =>
