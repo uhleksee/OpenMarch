@@ -223,7 +223,7 @@ export default function ThreeDViewer() {
     return (
         <div className="bg-bg-2 rounded-6 relative h-full w-full overflow-hidden">
             <ThreeCanvas
-                shadows
+                shadows="basic"
                 dpr={[1, 2]}
                 gl={{ antialias: true, alpha: false }}
                 camera={{ fov: 43 }}
