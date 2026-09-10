@@ -53,6 +53,7 @@ import LightingRig from "./LightingRig";
 import StadiumEnvironment from "./StadiumEnvironment";
 import { getFieldSceneTheme, STORYBOOK_RENDERING } from "./sceneTheme";
 import { getMarcherDetailDistance } from "./instrumentCatalog";
+import BatchedMarcherLayer from "./BatchedMarcherLayer";
 import {
     DEFAULT_VIEWER_3D_PREFERENCES,
     type FieldScene,
@@ -241,6 +242,9 @@ interface ViewerPerformanceMetrics {
     marcherFrameCount: number;
     marcherFrameTotalMs: number;
     marcherFrameWorstMs: number;
+    batchFrameCount: number;
+    batchFrameTotalMs: number;
+    batchFrameWorstMs: number;
     reactCommitLatestMs: number;
     reactCommitWorstMs: number;
 }
@@ -253,6 +257,9 @@ const createViewerPerformanceMetrics = (): ViewerPerformanceMetrics => ({
     marcherFrameCount: 0,
     marcherFrameTotalMs: 0,
     marcherFrameWorstMs: 0,
+    batchFrameCount: 0,
+    batchFrameTotalMs: 0,
+    batchFrameWorstMs: 0,
     reactCommitLatestMs: 0,
     reactCommitWorstMs: 0,
 });
@@ -314,6 +321,9 @@ function PerformanceSampler({
         const marcherFrameMs = metrics.marcherFrameCount
             ? metrics.marcherFrameTotalMs / metrics.marcherFrameCount
             : 0;
+        const batchFrameMs = metrics.batchFrameCount
+            ? metrics.batchFrameTotalMs / metrics.batchFrameCount
+            : 0;
 
         panelRef.current.textContent = [
             `Page ${pageId} performance`,
@@ -321,7 +331,9 @@ function PerformanceSampler({
             `Average frame       ${averageFrameMs.toFixed(1)} ms`,
             `Slowest frame       ${frameWorstMsRef.current.toFixed(1)} ms`,
             `Slowest since open  ${sessionWorstMsRef.current.toFixed(1)} ms`,
-            `Marcher motion CPU  ${marcherFrameMs.toFixed(2)} ms`,
+            `Coordinate CPU      ${marcherFrameMs.toFixed(2)} ms`,
+            `Instance update CPU ${batchFrameMs.toFixed(2)} ms avg`,
+            `Worst instance CPU  ${metrics.batchFrameWorstMs.toFixed(2)} ms`,
             `Marcher React work  ${metrics.reactCommitLatestMs.toFixed(1)} ms`,
             `Worst React work    ${metrics.reactCommitWorstMs.toFixed(1)} ms`,
             `Draw calls          ${gl.info.render.calls.toLocaleString()}`,
@@ -338,6 +350,9 @@ function PerformanceSampler({
         metrics.marcherFrameCount = 0;
         metrics.marcherFrameTotalMs = 0;
         metrics.marcherFrameWorstMs = 0;
+        metrics.batchFrameCount = 0;
+        metrics.batchFrameTotalMs = 0;
+        metrics.batchFrameWorstMs = 0;
         metrics.reactCommitWorstMs = metrics.reactCommitLatestMs;
     });
 
@@ -429,6 +444,14 @@ function MarcherFormation({
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
     const { isPlaying } = useIsPlaying()!;
     const detailDistance = getMarcherDetailDistance(marchers.length);
+    const marcherBatchKey = useMemo(
+        () =>
+            `${uniformStyle}:${marchers
+                .filter((marcher) => marcherPages[marcher.id] != null)
+                .map((marcher) => `${marcher.id}:${marcher.section}`)
+                .join("|")}`,
+        [marcherPages, marchers, uniformStyle],
+    );
 
     const setPausedPositions = useCallback(() => {
         for (const marcher of marchers) {
@@ -514,53 +537,65 @@ function MarcherFormation({
                 duration,
             );
         }
-    });
+    }, -2);
 
     return (
-        <group>
-            {marchers.map((marcher) => {
-                const marcherPage = marcherPages[marcher.id];
-                if (!marcherPage) return null;
-                const appearance = resolveAppearanceFromStack(
-                    marcherAppearances[marcher.id] ?? [],
-                    fieldProperties.theme,
-                );
-                const drillColor = rgbaStringToThreeColor(appearance.fillRgba);
-                const uniformColorToUse =
-                    uniformColorMode === "override" ? uniformColor : drillColor;
-                let motionRef = marcherMotionRefs.current.get(marcher.id);
-                if (!motionRef) {
-                    motionRef = { current: false, lowerBodyAngle: 0 };
-                    marcherMotionRefs.current.set(marcher.id, motionRef);
-                }
-                let marcherGroupRef = marcherRefs.current.get(marcher.id);
-                if (!marcherGroupRef) {
-                    marcherGroupRef = { current: null };
-                    marcherRefs.current.set(marcher.id, marcherGroupRef);
-                }
+        <BatchedMarcherLayer
+            rebuildKey={marcherBatchKey}
+            measurePerformance={measurePerformance}
+            performanceMetricsRef={performanceMetricsRef}
+        >
+            <group>
+                {marchers.map((marcher) => {
+                    const marcherPage = marcherPages[marcher.id];
+                    if (!marcherPage) return null;
+                    const appearance = resolveAppearanceFromStack(
+                        marcherAppearances[marcher.id] ?? [],
+                        fieldProperties.theme,
+                    );
+                    const drillColor = rgbaStringToThreeColor(
+                        appearance.fillRgba,
+                    );
+                    const uniformColorToUse =
+                        uniformColorMode === "override"
+                            ? uniformColor
+                            : drillColor;
+                    let motionRef = marcherMotionRefs.current.get(marcher.id);
+                    if (!motionRef) {
+                        motionRef = { current: false, lowerBodyAngle: 0 };
+                        marcherMotionRefs.current.set(marcher.id, motionRef);
+                    }
+                    let marcherGroupRef = marcherRefs.current.get(marcher.id);
+                    if (!marcherGroupRef) {
+                        marcherGroupRef = { current: null };
+                        marcherRefs.current.set(marcher.id, marcherGroupRef);
+                    }
 
-                return (
-                    <group
-                        key={marcher.id}
-                        ref={marcherGroupRef}
-                        visible={appearance.visible}
-                    >
-                        <Marcher3D
-                            marcherId={marcher.id}
-                            drillNumber={marcher.drill_number}
-                            section={marcher.section}
-                            color={uniformColorToUse}
-                            equipmentAccentColor={drillColor}
-                            labelVisible={showLabels && appearance.textVisible}
-                            uniformStyle={uniformStyle}
-                            instrumentFinish={instrumentFinish}
-                            detailDistance={detailDistance}
-                            motionRef={motionRef}
-                        />
-                    </group>
-                );
-            })}
-        </group>
+                    return (
+                        <group
+                            key={marcher.id}
+                            ref={marcherGroupRef}
+                            visible={appearance.visible}
+                        >
+                            <Marcher3D
+                                marcherId={marcher.id}
+                                drillNumber={marcher.drill_number}
+                                section={marcher.section}
+                                color={uniformColorToUse}
+                                equipmentAccentColor={drillColor}
+                                labelVisible={
+                                    showLabels && appearance.textVisible
+                                }
+                                uniformStyle={uniformStyle}
+                                instrumentFinish={instrumentFinish}
+                                detailDistance={detailDistance}
+                                motionRef={motionRef}
+                            />
+                        </group>
+                    );
+                })}
+            </group>
+        </BatchedMarcherLayer>
     );
 }
 

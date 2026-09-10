@@ -95,3 +95,9 @@ export const getLowerBodyFacingAngle = (
 
     return Math.max(-Math.PI / 2, Math.min(Math.PI / 2, relativeAngle));
 };
+
+/** Every moving marcher samples the same continuous step cycle. */
+export const getSynchronizedStride = (
+    elapsedTimeSeconds: number,
+    movementBlend: number,
+): number => Math.sin(elapsedTimeSeconds * 5.4) * 0.34 * movementBlend;

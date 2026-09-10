@@ -8,6 +8,7 @@ import MarcherEquipment, {
 } from "./MarcherEquipment";
 import { SKIN_TONES, STORYBOOK_THEME } from "./sceneTheme";
 import type { MarcherModelProps } from "./Marcher3D";
+import { getSynchronizedStride } from "./viewer3d.utils";
 
 const POSES: Record<
     MarcherPose,
@@ -77,7 +78,6 @@ const getVariation = (seed: number) => {
         skin: SKIN_TONES[Math.floor(random * SKIN_TONES.length)],
         height: 1.06 + random * 0.1,
         plumeLean: (random - 0.5) * 0.14,
-        phase: random * Math.PI * 2,
     };
 };
 
@@ -101,7 +101,6 @@ export default function ToonMarcherModel({
     const rightArmRef = useRef<THREE.Group>(null);
     const leftLegRef = useRef<THREE.Group>(null);
     const rightLegRef = useRef<THREE.Group>(null);
-    const animationPhaseRef = useRef(0);
     const motionBlendRef = useRef(0);
     const isDetailedRef = useRef(false);
     const detailFrameRef = useRef(variantSeed % 12);
@@ -115,7 +114,7 @@ export default function ToonMarcherModel({
     const isSummer = uniformStyle === "summer";
     const pantsColor = isSummer ? color : STORYBOOK_THEME.uniformDark;
 
-    useFrame(({ camera }, delta) => {
+    useFrame(({ camera, clock }, delta) => {
         const root = rootRef.current;
         const leftArm = leftArmRef.current;
         const rightArm = rightArmRef.current;
@@ -163,16 +162,11 @@ export default function ToonMarcherModel({
             movementTarget,
             1 - Math.exp(-delta * 14),
         );
-        let phase = animationPhaseRef.current + variation.phase;
-        if (motionBlendRef.current > 0.001) {
-            animationPhaseRef.current += delta * 5.4;
-            phase = animationPhaseRef.current + variation.phase;
-        }
-        const stride =
-            Math.sin(phase) *
-            0.34 *
-            instrument.strideScale *
-            motionBlendRef.current;
+        const phase = clock.elapsedTime * 5.4;
+        const stride = getSynchronizedStride(
+            clock.elapsedTime,
+            motionBlendRef.current,
+        );
 
         lowerBody.rotation.y = THREE.MathUtils.lerp(
             lowerBody.rotation.y,
@@ -222,7 +216,7 @@ export default function ToonMarcherModel({
             smoothing,
         );
         distantEquipment.rotation.z = equipment.rotation.z;
-    });
+    }, -1);
 
     return (
         <group>

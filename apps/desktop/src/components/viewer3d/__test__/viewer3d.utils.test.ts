@@ -5,6 +5,7 @@ import {
     getCameraPresetConfiguration,
     getFieldWorldDimensions,
     getLowerBodyFacingAngle,
+    getSynchronizedStride,
     hasWorldPositionChanged,
     rgbaStringToThreeColor,
 } from "../viewer3d.utils";
@@ -82,5 +83,11 @@ describe("3D viewer coordinate utilities", () => {
 
     it("calculates travel relative to the upper-body facing", () => {
         expect(getLowerBodyFacingAngle(1, 0, Math.PI / 2)).toBeCloseTo(0);
+    });
+
+    it("uses one shared stride cycle for every moving marcher", () => {
+        const quarterCycleTime = Math.PI / 10.8;
+        expect(getSynchronizedStride(quarterCycleTime, 1)).toBeCloseTo(0.34);
+        expect(getSynchronizedStride(quarterCycleTime, 0)).toBe(0);
     });
 });

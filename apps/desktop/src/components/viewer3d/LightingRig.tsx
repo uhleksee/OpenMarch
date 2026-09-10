@@ -24,7 +24,12 @@ export default function LightingRig({
         gl.outputColorSpace = THREE.SRGBColorSpace;
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = isNight ? 0.94 : STORYBOOK_RENDERING.exposure;
+        gl.shadowMap.autoUpdate = false;
+        gl.shadowMap.needsUpdate = true;
         scene.background = new THREE.Color(theme.skyHorizon);
+        return () => {
+            gl.shadowMap.autoUpdate = true;
+        };
     }, [gl, isNight, scene, theme.skyHorizon]);
 
     return (
