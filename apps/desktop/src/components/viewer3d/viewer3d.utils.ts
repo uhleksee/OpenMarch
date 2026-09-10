@@ -69,8 +69,11 @@ export const hasWorldPositionChanged = (
     return deltaX * deltaX + deltaZ * deltaZ > epsilon * epsilon;
 };
 
-const normalizeRadians = (angle: number): number =>
-    Math.atan2(Math.sin(angle), Math.cos(angle));
+const normalizeRadians = (angle: number): number => {
+    if (angle > Math.PI) return angle - Math.PI * 2;
+    if (angle < -Math.PI) return angle + Math.PI * 2;
+    return angle;
+};
 
 /**
  * Turn the lower body toward lateral and forward travel while leaving backward

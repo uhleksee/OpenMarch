@@ -1,4 +1,5 @@
 import {
+    Profiler,
     useCallback,
     useEffect,
     useLayoutEffect,
@@ -7,9 +8,10 @@ import {
     useRef,
     useState,
     type ElementRef,
+    type ProfilerOnRenderCallback,
 } from "react";
 import { Canvas as ThreeCanvas, useFrame, useThree } from "@react-three/fiber";
-import { AdaptiveDpr, OrbitControls } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import {
     keepPreviousData,
     useQuery,
@@ -221,7 +223,6 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
             enableRotate
             enableZoom
             enableDamping
-            regress
             dampingFactor={0.12}
             onStart={() => {
                 transitionRef.current = null;
@@ -235,6 +236,113 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
 }
 
 const MemoizedCameraRig = memo(CameraRig);
+
+interface ViewerPerformanceMetrics {
+    marcherFrameCount: number;
+    marcherFrameTotalMs: number;
+    marcherFrameWorstMs: number;
+    reactCommitLatestMs: number;
+    reactCommitWorstMs: number;
+}
+
+interface ViewerPerformanceMetricsRef {
+    current: ViewerPerformanceMetrics;
+}
+
+const createViewerPerformanceMetrics = (): ViewerPerformanceMetrics => ({
+    marcherFrameCount: 0,
+    marcherFrameTotalMs: 0,
+    marcherFrameWorstMs: 0,
+    reactCommitLatestMs: 0,
+    reactCommitWorstMs: 0,
+});
+
+function PerformanceSampler({
+    enabled,
+    panelRef,
+    metricsRef,
+    pageId,
+}: {
+    enabled: boolean;
+    panelRef: { current: HTMLPreElement | null };
+    metricsRef: ViewerPerformanceMetricsRef;
+    pageId: number;
+}) {
+    const lastFrameAtRef = useRef(0);
+    const sampleStartedAtRef = useRef(0);
+    const frameCountRef = useRef(0);
+    const frameTotalMsRef = useRef(0);
+    const frameWorstMsRef = useRef(0);
+    const sessionWorstMsRef = useRef(0);
+
+    useEffect(() => {
+        lastFrameAtRef.current = 0;
+        sampleStartedAtRef.current = 0;
+        frameCountRef.current = 0;
+        frameTotalMsRef.current = 0;
+        frameWorstMsRef.current = 0;
+        sessionWorstMsRef.current = 0;
+        metricsRef.current = createViewerPerformanceMetrics();
+    }, [enabled, metricsRef]);
+
+    useFrame(({ gl }) => {
+        if (!enabled) return;
+
+        const now = performance.now();
+        if (sampleStartedAtRef.current === 0) {
+            sampleStartedAtRef.current = now;
+            lastFrameAtRef.current = now;
+            return;
+        }
+
+        const frameMs = now - lastFrameAtRef.current;
+        lastFrameAtRef.current = now;
+        frameCountRef.current += 1;
+        frameTotalMsRef.current += frameMs;
+        frameWorstMsRef.current = Math.max(frameWorstMsRef.current, frameMs);
+        sessionWorstMsRef.current = Math.max(
+            sessionWorstMsRef.current,
+            frameMs,
+        );
+
+        const sampleDuration = now - sampleStartedAtRef.current;
+        if (sampleDuration < 750 || !panelRef.current) return;
+
+        const metrics = metricsRef.current;
+        const averageFrameMs = frameTotalMsRef.current / frameCountRef.current;
+        const fps = (frameCountRef.current * 1000) / sampleDuration;
+        const marcherFrameMs = metrics.marcherFrameCount
+            ? metrics.marcherFrameTotalMs / metrics.marcherFrameCount
+            : 0;
+
+        panelRef.current.textContent = [
+            `Page ${pageId} performance`,
+            `FPS                 ${fps.toFixed(0)}`,
+            `Average frame       ${averageFrameMs.toFixed(1)} ms`,
+            `Slowest frame       ${frameWorstMsRef.current.toFixed(1)} ms`,
+            `Slowest since open  ${sessionWorstMsRef.current.toFixed(1)} ms`,
+            `Marcher motion CPU  ${marcherFrameMs.toFixed(2)} ms`,
+            `Marcher React work  ${metrics.reactCommitLatestMs.toFixed(1)} ms`,
+            `Worst React work    ${metrics.reactCommitWorstMs.toFixed(1)} ms`,
+            `Draw calls          ${gl.info.render.calls.toLocaleString()}`,
+            `Triangles           ${gl.info.render.triangles.toLocaleString()}`,
+            `3D shapes in memory ${gl.info.memory.geometries.toLocaleString()}`,
+            "",
+            "Play through a page change and watch the slowest values.",
+        ].join("\n");
+
+        sampleStartedAtRef.current = now;
+        frameCountRef.current = 0;
+        frameTotalMsRef.current = 0;
+        frameWorstMsRef.current = 0;
+        metrics.marcherFrameCount = 0;
+        metrics.marcherFrameTotalMs = 0;
+        metrics.marcherFrameWorstMs = 0;
+        metrics.reactCommitWorstMs = metrics.reactCommitLatestMs;
+    });
+
+    return null;
+}
 
 interface StaticFieldSceneProps {
     fieldProperties: FieldProperties;
@@ -295,6 +403,8 @@ interface MarcherFormationProps {
     uniformColorMode: UniformColorMode;
     uniformColor: string;
     showLabels: boolean;
+    measurePerformance: boolean;
+    performanceMetricsRef: ViewerPerformanceMetricsRef;
 }
 
 interface MarcherGroupRef {
@@ -312,6 +422,8 @@ function MarcherFormation({
     uniformColorMode,
     uniformColor,
     showLabels,
+    measurePerformance,
+    performanceMetricsRef,
 }: MarcherFormationProps) {
     const marcherRefs = useRef(new Map<number, MarcherGroupRef>());
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
@@ -351,6 +463,7 @@ function MarcherFormation({
 
     useFrame(() => {
         if (!isPlaying) return;
+        const startedAt = measurePerformance ? performance.now() : 0;
         const currentTime = getLivePlaybackPosition() * 1000;
 
         for (const marcher of marchers) {
@@ -389,6 +502,17 @@ function MarcherFormation({
                 motionRef.lowerBodyAngle = 0;
                 // A drill timeline query may still be loading at this frame.
             }
+        }
+
+        if (measurePerformance) {
+            const duration = performance.now() - startedAt;
+            const metrics = performanceMetricsRef.current;
+            metrics.marcherFrameCount += 1;
+            metrics.marcherFrameTotalMs += duration;
+            metrics.marcherFrameWorstMs = Math.max(
+                metrics.marcherFrameWorstMs,
+                duration,
+            );
         }
     });
 
@@ -443,6 +567,9 @@ function MarcherFormation({
 export default function ThreeDViewer() {
     const [cameraPreset, setCameraPreset] = useState<CameraPreset>("pressBox");
     const [preferences, setPreferences] = useState(loadViewerPreferences);
+    const [showPerformance, setShowPerformance] = useState(false);
+    const performancePanelRef = useRef<HTMLPreElement>(null);
+    const performanceMetricsRef = useRef(createViewerPerformanceMetrics());
     const databaseReady = useDatabaseReady();
     const queryClient = useQueryClient();
     const { selectedPage } = useSelectedPage()!;
@@ -462,12 +589,57 @@ export default function ThreeDViewer() {
     });
     const { data: marcherTimelines } = useManyCoordinateData(pages);
 
+    const handleMarcherRender = useCallback<ProfilerOnRenderCallback>(
+        (_id, _phase, actualDuration) => {
+            if (!showPerformance) return;
+            const metrics = performanceMetricsRef.current;
+            metrics.reactCommitLatestMs = actualDuration;
+            metrics.reactCommitWorstMs = Math.max(
+                metrics.reactCommitWorstMs,
+                actualDuration,
+            );
+        },
+        [showPerformance],
+    );
+
     useEffect(() => {
         window.localStorage.setItem(
             VIEWER_PREFERENCES_KEY,
             JSON.stringify(preferences),
         );
     }, [preferences]);
+
+    useEffect(() => {
+        if (!selectedPage || pages.length < 2) return;
+
+        const selectedIndex = pages.findIndex(
+            (page) => page.id === selectedPage.id,
+        );
+        if (selectedIndex < 0) return;
+
+        const nearbyPages = [
+            pages[selectedIndex + 1],
+            pages[selectedIndex + 2],
+            pages[selectedIndex + 3],
+            pages[selectedIndex - 1],
+        ].filter((page) => page != null);
+        let cancelled = false;
+        const timeoutId = window.setTimeout(() => {
+            void (async () => {
+                for (const page of nearbyPages) {
+                    if (cancelled) return;
+                    await queryClient.prefetchQuery(
+                        marcherAppearancesQueryOptions(page.id, queryClient),
+                    );
+                }
+            })();
+        }, 0);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timeoutId);
+        };
+    }, [pages, queryClient, selectedPage]);
 
     if (!fieldProperties || !selectedPage) {
         return (
@@ -483,8 +655,7 @@ export default function ThreeDViewer() {
         <div className="bg-bg-2 rounded-6 relative h-full w-full overflow-hidden">
             <ThreeCanvas
                 shadows="basic"
-                dpr={[0.75, 1]}
-                performance={{ min: 0.65, debounce: 300 }}
+                dpr={1}
                 gl={{
                     antialias: false,
                     alpha: false,
@@ -492,7 +663,6 @@ export default function ThreeDViewer() {
                 }}
                 camera={{ fov: 43 }}
             >
-                <AdaptiveDpr pixelated />
                 <StaticFieldScene
                     fieldProperties={fieldProperties}
                     fieldWidth={width}
@@ -501,22 +671,32 @@ export default function ThreeDViewer() {
                     showHalfLines={uiSettings.halfLines}
                     scene={preferences.fieldScene}
                 />
-                <MarcherFormation
-                    marchers={marchers}
-                    marcherPages={marcherPages}
-                    marcherTimelines={marcherTimelines}
-                    marcherAppearances={marcherAppearances}
-                    fieldProperties={fieldProperties}
-                    uniformStyle={preferences.uniformStyle}
-                    instrumentFinish={preferences.instrumentFinish}
-                    uniformColorMode={preferences.uniformColorMode}
-                    uniformColor={preferences.uniformColor}
-                    showLabels={preferences.showLabels}
-                />
+                <Profiler id="3d-marchers" onRender={handleMarcherRender}>
+                    <MarcherFormation
+                        marchers={marchers}
+                        marcherPages={marcherPages}
+                        marcherTimelines={marcherTimelines}
+                        marcherAppearances={marcherAppearances}
+                        fieldProperties={fieldProperties}
+                        uniformStyle={preferences.uniformStyle}
+                        instrumentFinish={preferences.instrumentFinish}
+                        uniformColorMode={preferences.uniformColorMode}
+                        uniformColor={preferences.uniformColor}
+                        showLabels={preferences.showLabels}
+                        measurePerformance={showPerformance}
+                        performanceMetricsRef={performanceMetricsRef}
+                    />
+                </Profiler>
                 <MemoizedCameraRig
                     preset={cameraPreset}
                     fieldWidth={width}
                     fieldDepth={depth}
+                />
+                <PerformanceSampler
+                    enabled={showPerformance}
+                    panelRef={performancePanelRef}
+                    metricsRef={performanceMetricsRef}
+                    pageId={selectedPage.id}
                 />
             </ThreeCanvas>
 
@@ -672,8 +852,33 @@ export default function ThreeDViewer() {
                     >
                         Labels {preferences.showLabels ? "on" : "off"}
                     </button>
+
+                    <button
+                        type="button"
+                        aria-pressed={showPerformance}
+                        onClick={() =>
+                            setShowPerformance((current) => !current)
+                        }
+                        className={clsx(
+                            "rounded-4 border px-4 py-2 transition-colors",
+                            showPerformance
+                                ? "border-accent bg-fg-2 text-accent"
+                                : "border-stroke hover:bg-fg-2",
+                        )}
+                    >
+                        Performance {showPerformance ? "on" : "off"}
+                    </button>
                 </div>
             </div>
+
+            {showPerformance && (
+                <pre
+                    ref={performancePanelRef}
+                    className="border-stroke bg-bg-1/90 text-text pointer-events-none absolute right-6 bottom-6 z-10 rounded-lg border p-4 font-mono text-xs leading-relaxed shadow-lg backdrop-blur-sm"
+                >
+                    Measuring performance…
+                </pre>
+            )}
 
             <p className="bg-bg-1/80 text-text/80 pointer-events-none absolute bottom-6 left-6 rounded-md px-8 py-4 text-xs backdrop-blur-sm">
                 Instruments follow each marcher&apos;s section · drag to orbit ·
