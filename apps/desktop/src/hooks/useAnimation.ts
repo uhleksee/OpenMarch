@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+    startTransition,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+} from "react";
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
 import { getCoordinatesAtTime } from "@/utilities/Keyframes";
@@ -11,10 +17,14 @@ import Page from "@/global/classes/Page";
 
 interface UseAnimationProps {
     canvas: OpenMarchCanvas | null;
+    renderCanvas?: boolean;
 }
 
 // eslint-disable-next-line max-lines-per-function
-export const useAnimation = ({ canvas }: UseAnimationProps) => {
+export const useAnimation = ({
+    canvas,
+    renderCanvas = true,
+}: UseAnimationProps) => {
     const { pages } = useTimingObjects()!;
     const pagesById: Record<number, Page> = useMemo(() => {
         return pages.reduce(
@@ -26,6 +36,7 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
         );
     }, [pages]);
     const { setSelectedPage, selectedPage } = useSelectedPage()!;
+    const selectedPageRef = useRef(selectedPage);
     const { isPlaying, setIsPlaying } = useIsPlaying()!;
     const {
         collisions: pageCollisions,
@@ -35,15 +46,24 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
 
     // The number of pages +/- to fetch
     const PAGE_DELTA = 2;
-    const { data: marcherTimelines } = useManyCoordinateData(
-        selectedPage
-            ? pages.filter(
-                  (p) => Math.abs(p.order - selectedPage.order) <= PAGE_DELTA,
-              )
-            : [],
+    const renderedPage = renderCanvas ? selectedPage : null;
+    const animationPages = useMemo(
+        () =>
+            renderedPage
+                ? pages.filter(
+                      (p) =>
+                          Math.abs(p.order - renderedPage.order) <= PAGE_DELTA,
+                  )
+                : [],
+        [pages, renderedPage],
     );
+    const { data: marcherTimelines } = useManyCoordinateData(animationPages);
 
     const animationFrameRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        selectedPageRef.current = selectedPage;
+    }, [selectedPage]);
 
     // const marcherTimelines = useMemo(() => {
     //     if (
@@ -207,18 +227,19 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
             });
             if (!currentPage) {
                 // We're past the end, set the selected page to the last one and stop playing
-                setSelectedPage(pages[pages.length - 1]);
-                setIsPlaying(false);
                 const lastPage = pages[pages.length - 1];
-                if (lastPage !== selectedPage) {
-                    setSelectedPage(lastPage);
+                if (lastPage.id !== selectedPageRef.current?.id) {
+                    selectedPageRef.current = lastPage;
+                    startTransition(() => setSelectedPage(lastPage));
                 }
-            } else if (currentPage?.id !== selectedPage?.id) {
+                setIsPlaying(false);
+            } else if (currentPage.id !== selectedPageRef.current?.id) {
                 // We're on a different page, set the selected page to the current page
-                setSelectedPage(currentPage);
+                selectedPageRef.current = currentPage;
+                startTransition(() => setSelectedPage(currentPage));
             }
         },
-        [pages, canvas, selectedPage, pagesById, setSelectedPage, setIsPlaying],
+        [pages, canvas, pagesById, setSelectedPage, setIsPlaying],
     );
 
     // Animate the canvas based on playback timestamp
@@ -229,8 +250,9 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
 
             try {
                 const currentTime = getLivePlaybackPosition() * 1000; // s to ms
-                const continueAnimation =
-                    setMarcherPositionsAtTime(currentTime);
+                const continueAnimation = renderCanvas
+                    ? setMarcherPositionsAtTime(currentTime)
+                    : true;
                 void updateSelectedPage(currentTime);
                 animationFrameRef.current = requestAnimationFrame(animate);
                 if (!continueAnimation) setIsPlaying(false);
@@ -261,6 +283,7 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
         setMarcherPositionsAtTime,
         updateSelectedPage,
         marcherTimelines,
+        renderCanvas,
         setIsPlaying,
     ]);
 

@@ -2,6 +2,7 @@ import {
     useCallback,
     useEffect,
     useLayoutEffect,
+    memo,
     useMemo,
     useRef,
     useState,
@@ -206,6 +207,50 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
     );
 }
 
+const MemoizedCameraRig = memo(CameraRig);
+
+interface StaticFieldSceneProps {
+    fieldProperties: FieldProperties;
+    fieldWidth: number;
+    fieldDepth: number;
+    showGrid: boolean;
+    showHalfLines: boolean;
+    showCrowd: boolean;
+}
+
+const StaticFieldScene = memo(function StaticFieldScene({
+    fieldProperties,
+    fieldWidth,
+    fieldDepth,
+    showGrid,
+    showHalfLines,
+    showCrowd,
+}: StaticFieldSceneProps) {
+    return (
+        <>
+            <fog
+                attach="fog"
+                args={[
+                    STORYBOOK_THEME.skyHorizon,
+                    fieldWidth * STORYBOOK_RENDERING.fogNearFactor,
+                    fieldWidth * STORYBOOK_RENDERING.fogFarFactor,
+                ]}
+            />
+            <LightingRig fieldWidth={fieldWidth} fieldDepth={fieldDepth} />
+            <StadiumEnvironment
+                fieldWidth={fieldWidth}
+                fieldDepth={fieldDepth}
+                showCrowd={showCrowd}
+            />
+            <Field3D
+                fieldProperties={fieldProperties}
+                showGrid={showGrid}
+                showHalfLines={showHalfLines}
+            />
+        </>
+    );
+});
+
 interface MarcherFormationProps {
     marchers: Marcher[];
     marcherPages: Record<number, MarcherPage>;
@@ -390,24 +435,13 @@ export default function ThreeDViewer() {
                 }}
                 camera={{ fov: 43 }}
             >
-                <fog
-                    attach="fog"
-                    args={[
-                        STORYBOOK_THEME.skyHorizon,
-                        width * STORYBOOK_RENDERING.fogNearFactor,
-                        width * STORYBOOK_RENDERING.fogFarFactor,
-                    ]}
-                />
-                <LightingRig fieldWidth={width} fieldDepth={depth} />
-                <StadiumEnvironment
+                <StaticFieldScene
+                    fieldProperties={fieldProperties}
                     fieldWidth={width}
                     fieldDepth={depth}
-                    showCrowd={preferences.showCrowd}
-                />
-                <Field3D
-                    fieldProperties={fieldProperties}
                     showGrid={uiSettings.gridLines}
                     showHalfLines={uiSettings.halfLines}
+                    showCrowd={preferences.showCrowd}
                 />
                 <MarcherFormation
                     marchers={marchers}
@@ -418,7 +452,7 @@ export default function ThreeDViewer() {
                     uniformStyle={preferences.uniformStyle}
                     instrumentFinish={preferences.instrumentFinish}
                 />
-                <CameraRig
+                <MemoizedCameraRig
                     preset={cameraPreset}
                     fieldWidth={width}
                     fieldDepth={depth}

@@ -31,13 +31,17 @@ export const useMovementListeners = ({
 
     // MarcherPage queries
     const { data: marcherPages } = useQuery(
-        marcherPagesByPageQueryOptions(selectedPage?.id),
+        marcherPagesByPageQueryOptions(canvas ? selectedPage?.id : null),
     );
     const { data: previousMarcherPages } = useQuery(
-        marcherPagesByPageQueryOptions(selectedPage?.previousPageId!),
+        marcherPagesByPageQueryOptions(
+            canvas ? selectedPage?.previousPageId : null,
+        ),
     );
     const { data: nextMarcherPages } = useQuery(
-        marcherPagesByPageQueryOptions(selectedPage?.nextPageId!),
+        marcherPagesByPageQueryOptions(
+            canvas ? selectedPage?.nextPageId : null,
+        ),
     );
 
     const frameRef = useRef<number | null>(null);

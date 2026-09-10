@@ -43,10 +43,13 @@ import { ShapePath } from "@/global/classes/canvasObjects/ShapePath";
 // eslint-disable-next-line max-lines-per-function
 export default function Canvas({
     className = "",
+    active = true,
     testCanvas,
     onCanvasReady,
 }: {
     className?: string;
+    /** Whether the 2D editor is the active field view. */
+    active?: boolean;
     testCanvas?: OpenMarchCanvas;
     onCanvasReady?: (canvas: OpenMarchCanvas) => void;
 }) {
@@ -56,23 +59,24 @@ export default function Canvas({
     const { data: marchers } = useQuery(allMarchersQueryOptions());
     const { pages } = useTimingObjects()!;
     const { selectedPage } = useSelectedPage()!;
+    const activePage = active ? selectedPage : null;
     const { data: marcherVisuals } = useQuery(
         marcherWithVisualsQueryOptions(queryClient),
     );
     const { data: marcherAppearances } = useQuery(
-        marcherAppearancesQueryOptions(selectedPage?.id, queryClient),
+        marcherAppearancesQueryOptions(activePage?.id, queryClient),
     );
     const { setSelectedMarchers } = useSelectedMarchers()!;
 
     // MarcherPage queries
     const { data: marcherPages, isSuccess: marcherPagesLoaded } = useQuery(
-        marcherPagesByPageQueryOptions(selectedPage?.id),
+        marcherPagesByPageQueryOptions(activePage?.id),
     );
     const { data: previousMarcherPages } = useQuery(
-        marcherPagesByPageQueryOptions(selectedPage?.previousPageId!),
+        marcherPagesByPageQueryOptions(activePage?.previousPageId),
     );
     const { data: nextMarcherPages } = useQuery(
-        marcherPagesByPageQueryOptions(selectedPage?.nextPageId!),
+        marcherPagesByPageQueryOptions(activePage?.nextPageId),
     );
 
     const updateMarcherPages = useMutation(
@@ -93,6 +97,7 @@ export default function Canvas({
     } = useAlignmentEventStore()!;
     const { isFullscreen, perspective, setPerspective } = useFullscreenStore();
     const [canvas, setCanvas] = useState<OpenMarchCanvas | null>(null);
+    const activeCanvas = active ? canvas : null;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const innerDivRef = useRef<HTMLDivElement>(null);
@@ -101,10 +106,14 @@ export default function Canvas({
     const { currentCollisions } = useCollisionStore();
 
     // Custom hooks for the canvas
-    useSelectionListeners({ canvas });
-    useMovementListeners({ canvas });
-    useAnimation({ canvas });
-    useRenderMarcherShapes({ canvas, selectedPage, isPlaying });
+    useSelectionListeners({ canvas: activeCanvas });
+    useMovementListeners({ canvas: activeCanvas });
+    useAnimation({ canvas, renderCanvas: active });
+    useRenderMarcherShapes({
+        canvas: activeCanvas,
+        selectedPage: activePage,
+        isPlaying,
+    });
 
     // Function to center and fit the canvas to the container
     const centerAndFitCanvas = useCallback(() => {
@@ -190,19 +199,21 @@ export default function Canvas({
 
     // Initiate listeners
     useEffect(() => {
-        if (canvas) {
+        if (activeCanvas) {
             // Initiate listeners
             switch (alignmentEvent) {
                 case "line":
-                    canvas.setListeners(new LineListeners({ canvas: canvas }));
+                    activeCanvas.setListeners(
+                        new LineListeners({ canvas: activeCanvas }),
+                    );
                     break;
                 default:
-                    canvas.setListeners(
-                        new DefaultListeners({ canvas: canvas }),
+                    activeCanvas.setListeners(
+                        new DefaultListeners({ canvas: activeCanvas }),
                     );
                     break;
             }
-            canvas.eventMarchers = canvas.getCanvasMarchersByIds(
+            activeCanvas.eventMarchers = activeCanvas.getCanvasMarchersByIds(
                 alignmentEventMarchers.map((marcher) => marcher.id),
             );
 
@@ -211,11 +222,11 @@ export default function Canvas({
 
             // Cleanup
             return () => {
-                canvas.eventMarchers = [];
+                activeCanvas.eventMarchers = [];
             };
         }
     }, [
-        canvas,
+        activeCanvas,
         alignmentEvent,
         alignmentEventMarchers,
         centerAndFitCanvas,
@@ -307,7 +318,7 @@ export default function Canvas({
     // Sync canvas with marcher appearances
     useEffect(() => {
         if (
-            !canvas ||
+            !activeCanvas ||
             !marchers ||
             marcherAppearances == null ||
             marcherVisuals == null
@@ -330,9 +341,9 @@ export default function Canvas({
             );
         });
 
-        canvas.requestRenderAll();
+        activeCanvas.requestRenderAll();
     }, [
-        canvas,
+        activeCanvas,
         marchers,
         marcherAppearances,
         marcherVisuals,
@@ -355,7 +366,7 @@ export default function Canvas({
     // Render the marchers when the selected page or the marcher pages change
     useEffect(() => {
         if (
-            !canvas ||
+            !activeCanvas ||
             !selectedPage ||
             !marchers ||
             !marcherPagesLoaded ||
@@ -363,9 +374,9 @@ export default function Canvas({
         )
             return;
 
-        canvas.currentPage = selectedPage;
+        activeCanvas.currentPage = selectedPage;
 
-        canvas
+        activeCanvas
             .renderMarchers({
                 marcherVisuals,
                 marcherPages,
@@ -374,7 +385,7 @@ export default function Canvas({
                 console.error("Error rendering marchers", error);
             });
     }, [
-        canvas,
+        activeCanvas,
         marcherPages,
         marcherPagesLoaded,
         marcherVisuals,
@@ -385,7 +396,7 @@ export default function Canvas({
     // Renders pathways when selected page or settings change
     useEffect(() => {
         if (
-            !canvas ||
+            !activeCanvas ||
             !selectedPage ||
             !fieldProperties ||
             !marcherPagesLoaded ||
@@ -398,7 +409,7 @@ export default function Canvas({
             const nextPage = pages.find(
                 (p) => p.id === selectedPage.nextPageId,
             );
-            canvas.renderPathVisuals({
+            activeCanvas.renderPathVisuals({
                 marcherVisuals: marcherVisuals,
                 currentMarcherPages: marcherPages,
                 previousMarcherPages: previousMarcherPages || {},
@@ -411,10 +422,10 @@ export default function Canvas({
                 stepSizeWarningsEnabled: uiSettings.stepSizeWarnings,
                 fieldProperties: fieldProperties,
             });
-            canvas.sendCanvasMarchersToFront();
+            activeCanvas.sendCanvasMarchersToFront();
         }
     }, [
-        canvas,
+        activeCanvas,
         fieldProperties,
         marcherPages,
         previousMarcherPages,
@@ -541,22 +552,22 @@ export default function Canvas({
     // This effect ensures that when the animation is playing, the shape paths
     // are removed from the canvas.
     useEffect(() => {
-        if (canvas && isPlaying && selectedPage) {
-            canvas.removeAllObjectsByType(ShapePath);
+        if (activeCanvas && isPlaying && selectedPage) {
+            activeCanvas.removeAllObjectsByType(ShapePath);
         }
-    }, [canvas, isPlaying, selectedPage]);
+    }, [activeCanvas, isPlaying, selectedPage]);
 
     // This effect ensures that when the animation is paused, the marchers are
     // rendered at their final positions for the selected page.
     useEffect(() => {
         if (
-            canvas &&
+            activeCanvas &&
             !isPlaying &&
             selectedPage &&
             marcherPagesLoaded &&
             marcherVisuals != null
         ) {
-            canvas
+            activeCanvas
                 .renderMarchers({
                     marcherPages: marcherPages,
                     marcherVisuals: marcherVisuals,
@@ -566,7 +577,7 @@ export default function Canvas({
                 });
         }
     }, [
-        canvas,
+        activeCanvas,
         isPlaying,
         selectedPage,
         marcherPages,
@@ -577,13 +588,13 @@ export default function Canvas({
 
     // Render collision markers when paused
     useEffect(() => {
-        if (!canvas) return;
+        if (!activeCanvas) return;
 
         // Always remove existing collision markers when page changes or animation starts
-        const existingMarkers = canvas
+        const existingMarkers = activeCanvas
             .getObjects()
             .filter((obj: any) => obj.isCollisionMarker);
-        existingMarkers.forEach((marker) => canvas.remove(marker));
+        existingMarkers.forEach((marker) => activeCanvas.remove(marker));
 
         // Add new collision markers only when paused, collisions exist, and showCollisions is enabled
         if (
@@ -596,16 +607,16 @@ export default function Canvas({
                     collision.x,
                     collision.y,
                     collision.distance,
-                    canvas,
+                    activeCanvas,
                 );
                 collisionCircle.addText(collision.label);
                 collisionCircle.draw();
             });
         }
 
-        canvas.requestRenderAll();
+        activeCanvas.requestRenderAll();
     }, [
-        canvas,
+        activeCanvas,
         isPlaying,
         currentCollisions,
         selectedPage,

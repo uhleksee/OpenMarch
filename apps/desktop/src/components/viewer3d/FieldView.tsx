@@ -20,6 +20,7 @@ export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
         <div className="relative flex h-full min-h-0 min-w-0 flex-1">
             <Canvas
                 className={clsx({ hidden: viewMode === "3d" })}
+                active={viewMode === "2d"}
                 onCanvasReady={onCanvasReady}
             />
             {viewMode === "3d" && (

@@ -27,7 +27,7 @@ export const useSelectionListeners = ({
         );
     };
     const { data: marcherPages } = useQuery(
-        marcherPagesByPageQueryOptions(selectedPage?.id),
+        marcherPagesByPageQueryOptions(canvas ? selectedPage?.id : null),
     );
 
     /**
