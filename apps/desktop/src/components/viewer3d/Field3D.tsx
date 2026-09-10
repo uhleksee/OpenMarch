@@ -5,6 +5,7 @@ import {
     canvasCoordinatesToWorld,
     getFieldWorldDimensions,
 } from "./viewer3d.utils";
+import { STORYBOOK_THEME } from "./sceneTheme";
 
 interface Field3DProps {
     fieldProperties: FieldProperties;
@@ -34,6 +35,8 @@ export default function Field3D({
     showHalfLines,
 }: Field3DProps) {
     const { width, depth } = getFieldWorldDimensions(fieldProperties);
+    const stripeWidth = 8;
+    const stripeCount = Math.ceil(width / stripeWidth);
 
     const minorGridGeometry = useMemo(() => {
         const points: THREE.Vector3[] = [];
@@ -152,20 +155,38 @@ export default function Field3D({
         <group>
             <mesh position={[0, -0.13, 0]} receiveShadow>
                 <boxGeometry args={[width, 0.24, depth]} />
-                <meshStandardMaterial color="#24543a" roughness={0.94} />
+                <meshToonMaterial color={STORYBOOK_THEME.grassDark} />
             </mesh>
-            <mesh
-                position={[0, -0.16, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}
-                receiveShadow
-            >
-                <planeGeometry args={[width * 1.45, depth * 1.65]} />
-                <meshStandardMaterial color="#14251c" roughness={1} />
-            </mesh>
+            {Array.from({ length: stripeCount }, (_, index) => {
+                const currentWidth = Math.min(
+                    stripeWidth,
+                    width - index * stripeWidth,
+                );
+                return (
+                    <mesh
+                        key={index}
+                        position={[
+                            -width / 2 + index * stripeWidth + currentWidth / 2,
+                            0,
+                            0,
+                        ]}
+                        receiveShadow
+                    >
+                        <boxGeometry args={[currentWidth, 0.02, depth]} />
+                        <meshToonMaterial
+                            color={
+                                index % 2
+                                    ? STORYBOOK_THEME.grassLight
+                                    : STORYBOOK_THEME.grassDark
+                            }
+                        />
+                    </mesh>
+                );
+            })}
             {showGrid && (
                 <lineSegments geometry={minorGridGeometry}>
                     <lineBasicMaterial
-                        color="#63806c"
+                        color="#78947d"
                         transparent
                         opacity={0.34}
                     />
@@ -174,14 +195,14 @@ export default function Field3D({
             {showHalfLines && (
                 <lineSegments geometry={halfLineGeometry}>
                     <lineBasicMaterial
-                        color="#a9c3af"
+                        color="#b5c8b6"
                         transparent
                         opacity={0.58}
                     />
                 </lineSegments>
             )}
             <lineSegments geometry={checkpointGeometry}>
-                <lineBasicMaterial color="#f3f7ed" />
+                <lineBasicMaterial color={STORYBOOK_THEME.line} />
             </lineSegments>
         </group>
     );

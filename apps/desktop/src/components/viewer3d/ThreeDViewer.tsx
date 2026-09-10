@@ -37,6 +37,9 @@ import Marcher from "@/global/classes/Marcher";
 import MarcherPage from "@/global/classes/MarcherPage";
 import { MarcherTimeline } from "@/utilities/Keyframes";
 import { MarcherAppearanceByIdMap } from "@/hooks/queries/useMarcherAppearances";
+import LightingRig from "./LightingRig";
+import StadiumEnvironment from "./StadiumEnvironment";
+import { STORYBOOK_RENDERING, STORYBOOK_THEME } from "./sceneTheme";
 
 const CAMERA_LABELS: Record<CameraPreset, string> = {
     overhead: "Overhead",
@@ -169,6 +172,7 @@ function MarcherFormation({
                         visible={appearance.visible}
                     >
                         <Marcher3D
+                            marcherId={marcher.id}
                             drillNumber={marcher.drill_number}
                             color={rgbaStringToThreeColor(appearance.fillRgba)}
                             labelVisible={appearance.textVisible}
@@ -228,17 +232,16 @@ export default function ThreeDViewer() {
                 gl={{ antialias: true, alpha: false }}
                 camera={{ fov: 43 }}
             >
-                <color attach="background" args={["#0c1410"]} />
-                <fog attach="fog" args={["#0c1410", width * 0.9, width * 3]} />
-                <ambientLight intensity={0.9} />
-                <hemisphereLight args={["#e6f2ff", "#1c3425", 1.25]} />
-                <directionalLight
-                    position={[width * 0.25, width * 0.5, depth * 0.45]}
-                    intensity={2.1}
-                    castShadow
-                    shadow-mapSize-width={2048}
-                    shadow-mapSize-height={2048}
+                <fog
+                    attach="fog"
+                    args={[
+                        STORYBOOK_THEME.skyHorizon,
+                        width * STORYBOOK_RENDERING.fogNearFactor,
+                        width * STORYBOOK_RENDERING.fogFarFactor,
+                    ]}
                 />
+                <LightingRig fieldWidth={width} fieldDepth={depth} />
+                <StadiumEnvironment fieldWidth={width} fieldDepth={depth} />
                 <Field3D
                     fieldProperties={fieldProperties}
                     showGrid={uiSettings.gridLines}

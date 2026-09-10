@@ -38,6 +38,13 @@ describe("3D viewer coordinate utilities", () => {
         expect(camera.target).toEqual([0, 0, 0]);
     });
 
+    it("keeps the field-level preset clear of the home stands", () => {
+        const camera = getCameraPresetConfiguration("fieldLevel", 192, 84);
+        expect(camera.position[1]).toBeCloseTo(3.5);
+        expect(camera.position[2]).toBeGreaterThan(84 / 2);
+        expect(camera.position[2]).toBeLessThan(84 / 2 + 3);
+    });
+
     it("converts schema RGBA colors for Three.js materials", () => {
         expect(rgbaStringToThreeColor("rgba(12,34,56,0.5)")).toBe(
             "rgb(12, 34, 56)",

@@ -39,7 +39,7 @@ export const getCameraPresetConfiguration = (
             };
         case "fieldLevel":
             return {
-                position: [0, 3.5, fieldDepth * 0.62],
+                position: [0, 3.5, fieldDepth * 0.52],
                 target: [0, 1.5, -fieldDepth * 0.28],
                 fov: 52,
             };
