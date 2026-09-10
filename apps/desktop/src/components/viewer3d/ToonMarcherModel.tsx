@@ -9,41 +9,60 @@ import type { MarcherModelProps } from "./Marcher3D";
 
 const POSES: Record<
     MarcherPose,
-    { leftArmX: number; rightArmX: number; leftArmZ: number; rightArmZ: number }
+    {
+        leftArmX: number;
+        rightArmX: number;
+        leftForearmX: number;
+        rightForearmX: number;
+        leftArmZ: number;
+        rightArmZ: number;
+    }
 > = {
     free: {
         leftArmX: 0,
         rightArmX: 0,
+        leftForearmX: 0,
+        rightForearmX: 0,
         leftArmZ: -0.12,
         rightArmZ: 0.12,
     },
     woodwind: {
-        leftArmX: -0.95,
-        rightArmX: -0.9,
+        leftArmX: -0.25,
+        rightArmX: -0.32,
+        leftForearmX: -1.68,
+        rightForearmX: -1.62,
         leftArmZ: -0.38,
         rightArmZ: 0.32,
     },
     horn: {
-        leftArmX: -1.08,
-        rightArmX: -1.08,
-        leftArmZ: -0.24,
-        rightArmZ: 0.24,
+        leftArmX: -0.18,
+        rightArmX: -0.18,
+        leftForearmX: -2.02,
+        rightForearmX: -2.02,
+        leftArmZ: -0.3,
+        rightArmZ: 0.3,
     },
     battery: {
-        leftArmX: -0.68,
-        rightArmX: -0.68,
+        leftArmX: -0.32,
+        rightArmX: -0.32,
+        leftForearmX: -1.16,
+        rightForearmX: -1.16,
         leftArmZ: -0.2,
         rightArmZ: 0.2,
     },
     guard: {
-        leftArmX: -0.88,
-        rightArmX: -0.56,
+        leftArmX: -0.3,
+        rightArmX: -0.15,
+        leftForearmX: -1.42,
+        rightForearmX: -1.05,
         leftArmZ: -0.16,
         rightArmZ: 0.2,
     },
     keyboard: {
-        leftArmX: -0.84,
-        rightArmX: -0.84,
+        leftArmX: -0.3,
+        rightArmX: -0.3,
+        leftForearmX: -1.55,
+        rightForearmX: -1.55,
         leftArmZ: -0.28,
         rightArmZ: 0.28,
     },
@@ -54,7 +73,7 @@ const getVariation = (seed: number) => {
     const random = normalizedSeed / 233280;
     return {
         skin: SKIN_TONES[Math.floor(random * SKIN_TONES.length)],
-        height: 0.94 + random * 0.1,
+        height: 1.06 + random * 0.1,
         plumeLean: (random - 0.5) * 0.14,
         phase: random * Math.PI * 2,
     };
@@ -67,6 +86,7 @@ export default function ToonMarcherModel({
     uniformStyle,
     instrumentFinish,
     detailDistance,
+    motionRef,
 }: MarcherModelProps) {
     const rootRef = useRef<THREE.Group>(null);
     const detailedRef = useRef<THREE.Group>(null);
@@ -77,6 +97,7 @@ export default function ToonMarcherModel({
     const leftLegRef = useRef<THREE.Group>(null);
     const rightLegRef = useRef<THREE.Group>(null);
     const animationPhaseRef = useRef(0);
+    const motionBlendRef = useRef(0);
     const detailFrameRef = useRef(variantSeed % 12);
     const worldPositionRef = useRef(new THREE.Vector3());
     const { isPlaying } = useIsPlaying()!;
@@ -106,13 +127,22 @@ export default function ToonMarcherModel({
             return;
 
         const smoothing = 1 - Math.exp(-delta * 11);
-        let stride = 0;
+        const movementTarget = isPlaying && motionRef.current ? 1 : 0;
+        motionBlendRef.current = THREE.MathUtils.lerp(
+            motionBlendRef.current,
+            movementTarget,
+            1 - Math.exp(-delta * 14),
+        );
         let phase = animationPhaseRef.current + variation.phase;
-        if (isPlaying) {
+        if (motionBlendRef.current > 0.001) {
             animationPhaseRef.current += delta * 5.4;
             phase = animationPhaseRef.current + variation.phase;
-            stride = Math.sin(phase) * 0.34 * instrument.strideScale;
         }
+        const stride =
+            Math.sin(phase) *
+            0.34 *
+            instrument.strideScale *
+            motionBlendRef.current;
 
         const armSwing = instrument.pose === "free" ? 0.72 : 0.1;
         leftArm.rotation.x = THREE.MathUtils.lerp(
@@ -136,10 +166,11 @@ export default function ToonMarcherModel({
             smoothing,
         );
 
-        const bob = isPlaying ? Math.abs(Math.sin(phase)) * 0.045 : 0;
-        const sway = isPlaying
-            ? Math.sin(phase * 0.5) * instrument.bodySway
-            : 0;
+        const bob = Math.abs(Math.sin(phase)) * 0.045 * motionBlendRef.current;
+        const sway =
+            Math.sin(phase * 0.5) *
+            instrument.bodySway *
+            motionBlendRef.current;
         root.position.y = THREE.MathUtils.lerp(root.position.y, bob, smoothing);
         root.rotation.z = THREE.MathUtils.lerp(
             root.rotation.z,
@@ -148,7 +179,9 @@ export default function ToonMarcherModel({
         );
         equipment.rotation.z = THREE.MathUtils.lerp(
             equipment.rotation.z,
-            isPlaying ? Math.sin(phase * 0.5) * instrument.equipmentSway : 0,
+            Math.sin(phase * 0.5) *
+                instrument.equipmentSway *
+                motionBlendRef.current,
             smoothing,
         );
 
@@ -190,10 +223,38 @@ export default function ToonMarcherModel({
                         <sphereGeometry args={[0.4, 6, 4]} />
                         <meshToonMaterial color={variation.skin} />
                     </mesh>
-                    <mesh position={[0, 2.55, 0]}>
-                        <cylinderGeometry args={[0.33, 0.37, 0.42, 6]} />
-                        <meshToonMaterial color={STORYBOOK_THEME.uniformDark} />
-                    </mesh>
+                    {isClassic ? (
+                        <>
+                            <mesh position={[0, 2.58, 0]}>
+                                <cylinderGeometry
+                                    args={[0.33, 0.38, 0.58, 6]}
+                                />
+                                <meshToonMaterial
+                                    color={STORYBOOK_THEME.uniformDark}
+                                />
+                            </mesh>
+                            <mesh
+                                position={[variation.plumeLean, 3.08, 0]}
+                                scale={[0.17, 0.5, 0.13]}
+                            >
+                                <icosahedronGeometry args={[1, 1]} />
+                                <meshToonMaterial color={color} />
+                            </mesh>
+                        </>
+                    ) : (
+                        <mesh position={[0, 2.46, 0]}>
+                            <sphereGeometry
+                                args={[0.39, 6, 4, 0, Math.PI * 2, 0, 1.5]}
+                            />
+                            <meshToonMaterial
+                                color={
+                                    isSummer
+                                        ? STORYBOOK_THEME.hair
+                                        : STORYBOOK_THEME.uniformLight
+                                }
+                            />
+                        </mesh>
+                    )}
                 </group>
 
                 <group ref={detailedRef}>
@@ -263,43 +324,65 @@ export default function ToonMarcherModel({
 
                     <group
                         ref={leftArmRef}
-                        position={[-0.44, 1.78, 0]}
+                        position={[-0.44, 1.88, 0]}
                         rotation={[
                             pose.leftArmX,
                             0,
                             isSummer ? -0.18 : pose.leftArmZ,
                         ]}
                     >
-                        <mesh position={[0, -0.4, 0]} castShadow>
-                            <capsuleGeometry args={[0.115, 0.58, 3, 6]} />
+                        <mesh position={[0, -0.25, 0]} castShadow>
+                            <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
                             <meshToonMaterial
                                 color={isSummer ? variation.skin : color}
                             />
                         </mesh>
-                        <mesh position={[0, -0.8, 0]}>
-                            <sphereGeometry args={[0.14, 7, 5]} />
-                            <meshToonMaterial color={variation.skin} />
-                        </mesh>
+                        <group
+                            position={[0, -0.5, 0]}
+                            rotation={[pose.leftForearmX, 0, 0]}
+                        >
+                            <mesh position={[0, -0.25, 0]} castShadow>
+                                <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
+                                <meshToonMaterial
+                                    color={isSummer ? variation.skin : color}
+                                />
+                            </mesh>
+                            <mesh position={[0, -0.53, 0]}>
+                                <sphereGeometry args={[0.14, 7, 5]} />
+                                <meshToonMaterial color={variation.skin} />
+                            </mesh>
+                        </group>
                     </group>
                     <group
                         ref={rightArmRef}
-                        position={[0.44, 1.78, 0]}
+                        position={[0.44, 1.88, 0]}
                         rotation={[
                             pose.rightArmX,
                             0,
                             isSummer ? 0.18 : pose.rightArmZ,
                         ]}
                     >
-                        <mesh position={[0, -0.4, 0]} castShadow>
-                            <capsuleGeometry args={[0.115, 0.58, 3, 6]} />
+                        <mesh position={[0, -0.25, 0]} castShadow>
+                            <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
                             <meshToonMaterial
                                 color={isSummer ? variation.skin : color}
                             />
                         </mesh>
-                        <mesh position={[0, -0.8, 0]}>
-                            <sphereGeometry args={[0.14, 7, 5]} />
-                            <meshToonMaterial color={variation.skin} />
-                        </mesh>
+                        <group
+                            position={[0, -0.5, 0]}
+                            rotation={[pose.rightForearmX, 0, 0]}
+                        >
+                            <mesh position={[0, -0.25, 0]} castShadow>
+                                <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
+                                <meshToonMaterial
+                                    color={isSummer ? variation.skin : color}
+                                />
+                            </mesh>
+                            <mesh position={[0, -0.53, 0]}>
+                                <sphereGeometry args={[0.14, 7, 5]} />
+                                <meshToonMaterial color={variation.skin} />
+                            </mesh>
+                        </group>
                     </group>
 
                     <mesh position={[0, 2.22, 0]} castShadow>
@@ -309,8 +392,10 @@ export default function ToonMarcherModel({
 
                     {isClassic && (
                         <>
-                            <mesh position={[0, 2.48, -0.035]} castShadow>
-                                <cylinderGeometry args={[0.34, 0.39, 0.5, 8]} />
+                            <mesh position={[0, 2.55, -0.035]} castShadow>
+                                <cylinderGeometry
+                                    args={[0.33, 0.39, 0.62, 8]}
+                                />
                                 <meshToonMaterial
                                     color={STORYBOOK_THEME.uniformDark}
                                 />
@@ -321,17 +406,38 @@ export default function ToonMarcherModel({
                                     color={STORYBOOK_THEME.uniformDark}
                                 />
                             </mesh>
-                            <mesh
-                                position={[variation.plumeLean, 2.93, 0]}
-                                rotation={[0, 0, variation.plumeLean]}
-                            >
-                                <sphereGeometry args={[0.18, 7, 5]} />
-                                <meshToonMaterial color={color} />
-                            </mesh>
                             <mesh position={[0, 2.66, 0.33]}>
                                 <boxGeometry args={[0.5, 0.1, 0.05]} />
                                 <meshToonMaterial color={color} />
                             </mesh>
+                            <group
+                                position={[variation.plumeLean, 3.08, 0]}
+                                rotation={[0, 0, variation.plumeLean]}
+                            >
+                                {[-0.2, 0.06, 0.32].map((y, index) => (
+                                    <mesh
+                                        key={y}
+                                        position={[
+                                            index * variation.plumeLean * 0.7,
+                                            y,
+                                            0,
+                                        ]}
+                                        scale={[1, 1.45, 0.72]}
+                                        castShadow
+                                    >
+                                        <icosahedronGeometry
+                                            args={[index === 1 ? 0.2 : 0.17, 1]}
+                                        />
+                                        <meshToonMaterial
+                                            color={
+                                                index === 1
+                                                    ? STORYBOOK_THEME.uniformLight
+                                                    : color
+                                            }
+                                        />
+                                    </mesh>
+                                ))}
+                            </group>
                         </>
                     )}
                     {isModern && (
@@ -366,14 +472,13 @@ export default function ToonMarcherModel({
                             </mesh>
                         </>
                     )}
-
-                    <group ref={equipmentRef}>
-                        <MarcherEquipment
-                            kind={instrument.kind}
-                            finish={instrumentFinish}
-                            accentColor={color}
-                        />
-                    </group>
+                </group>
+                <group ref={equipmentRef}>
+                    <MarcherEquipment
+                        kind={instrument.kind}
+                        finish={instrumentFinish}
+                        accentColor={color}
+                    />
                 </group>
             </group>
         </group>

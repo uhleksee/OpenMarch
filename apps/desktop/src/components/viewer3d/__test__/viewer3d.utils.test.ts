@@ -4,6 +4,7 @@ import {
     canvasCoordinatesToWorld,
     getCameraPresetConfiguration,
     getFieldWorldDimensions,
+    hasWorldPositionChanged,
     rgbaStringToThreeColor,
 } from "../viewer3d.utils";
 import { getFieldNumberMarkers } from "../FieldNumbers";
@@ -59,5 +60,14 @@ describe("3D viewer coordinate utilities", () => {
         expect(markers.filter((marker) => marker.label === "50")).toHaveLength(
             2,
         );
+    });
+
+    it("only reports movement when a marcher actually changes coordinates", () => {
+        expect(
+            hasWorldPositionChanged({ x: 12, z: -8 }, { x: 12, z: -8 }),
+        ).toBe(false);
+        expect(
+            hasWorldPositionChanged({ x: 12, z: -8 }, { x: 12.1, z: -8 }),
+        ).toBe(true);
     });
 });

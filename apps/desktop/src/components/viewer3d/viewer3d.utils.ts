@@ -58,3 +58,13 @@ export const rgbaStringToThreeColor = (color: string): string => {
     if (!channels || channels.length < 3) return "rgb(220, 38, 38)";
     return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
 };
+
+export const hasWorldPositionChanged = (
+    current: { x: number; z: number },
+    next: { x: number; z: number },
+    epsilon = 0.0001,
+): boolean => {
+    const deltaX = next.x - current.x;
+    const deltaZ = next.z - current.z;
+    return deltaX * deltaX + deltaZ * deltaZ > epsilon * epsilon;
+};

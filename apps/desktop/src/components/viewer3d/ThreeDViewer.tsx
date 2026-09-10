@@ -1,6 +1,7 @@
 import {
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
@@ -31,12 +32,13 @@ import { getCoordinatesAtTime } from "@/utilities/Keyframes";
 import { getLivePlaybackPosition } from "@/components/timeline/audio/AudioPlayer";
 import { resolveAppearanceFromStack } from "@/entity-components/appearance";
 import Field3D from "./Field3D";
-import Marcher3D from "./Marcher3D";
+import Marcher3D, { type MarcherMotionRef } from "./Marcher3D";
 import {
     CameraPreset,
     canvasCoordinatesToWorld,
     getCameraPresetConfiguration,
     getFieldWorldDimensions,
+    hasWorldPositionChanged,
     rgbaStringToThreeColor,
 } from "./viewer3d.utils";
 import { FieldProperties } from "@openmarch/core";
@@ -136,7 +138,7 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
 
         transitionRef.current = {
             elapsed: 0,
-            duration: 0.72,
+            duration: 0.38,
             fromPosition: camera.position.clone(),
             toPosition: new THREE.Vector3(...configuration.position),
             fromTarget: controls.target.clone(),
@@ -192,7 +194,7 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
             enableRotate
             enableZoom
             enableDamping
-            dampingFactor={0.08}
+            dampingFactor={0.12}
             onStart={() => {
                 transitionRef.current = null;
             }}
@@ -214,6 +216,10 @@ interface MarcherFormationProps {
     instrumentFinish: InstrumentFinish;
 }
 
+interface MarcherGroupRef {
+    current: THREE.Group | null;
+}
+
 function MarcherFormation({
     marchers,
     marcherPages,
@@ -223,42 +229,67 @@ function MarcherFormation({
     uniformStyle,
     instrumentFinish,
 }: MarcherFormationProps) {
-    const marcherRefs = useRef(new Map<number, THREE.Group>());
+    const marcherRefs = useRef(new Map<number, MarcherGroupRef>());
+    const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
     const { isPlaying } = useIsPlaying()!;
     const detailDistance = getMarcherDetailDistance(marchers.length);
 
     const setPausedPositions = useCallback(() => {
         for (const marcher of marchers) {
             const marcherPage = marcherPages[marcher.id];
-            const marcherGroup = marcherRefs.current.get(marcher.id);
+            const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
             if (!marcherPage || !marcherGroup) continue;
+            const motionRef = marcherMotionRefs.current.get(marcher.id);
+            if (motionRef) motionRef.current = false;
             marcherGroup.position.set(
                 ...canvasCoordinatesToWorld(marcherPage, fieldProperties),
             );
         }
     }, [fieldProperties, marcherPages, marchers]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!isPlaying) setPausedPositions();
     }, [isPlaying, setPausedPositions]);
+
+    useLayoutEffect(() => {
+        for (const marcher of marchers) {
+            const marcherPage = marcherPages[marcher.id];
+            const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
+            if (!marcherPage || !marcherGroup) continue;
+            marcherGroup.rotation.y = THREE.MathUtils.degToRad(
+                -marcherPage.rotation_degrees,
+            );
+        }
+    }, [marcherPages, marchers]);
 
     useFrame(() => {
         if (!isPlaying) return;
         const currentTime = getLivePlaybackPosition() * 1000;
 
         for (const marcher of marchers) {
-            const marcherGroup = marcherRefs.current.get(marcher.id);
+            const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
             const timeline = marcherTimelines.get(marcher.id);
-            if (!marcherGroup || !timeline) continue;
+            const motionRef = marcherMotionRefs.current.get(marcher.id);
+            if (!marcherGroup || !timeline || !motionRef) continue;
 
             try {
                 const coordinate = getCoordinatesAtTime(currentTime, timeline);
-                if (!coordinate) continue;
-                marcherGroup.position.set(
-                    ...canvasCoordinatesToWorld(coordinate, fieldProperties),
+                if (!coordinate) {
+                    motionRef.current = false;
+                    continue;
+                }
+                const [x, y, z] = canvasCoordinatesToWorld(
+                    coordinate,
+                    fieldProperties,
                 );
+                motionRef.current = hasWorldPositionChanged(
+                    marcherGroup.position,
+                    { x, z },
+                );
+                marcherGroup.position.set(x, y, z);
             } catch {
-                // A neighboring page query may still be loading at this frame.
+                motionRef.current = false;
+                // A drill timeline query may still be loading at this frame.
             }
         }
     });
@@ -272,25 +303,21 @@ function MarcherFormation({
                     marcherAppearances[marcher.id] ?? [],
                     fieldProperties.theme,
                 );
+                let motionRef = marcherMotionRefs.current.get(marcher.id);
+                if (!motionRef) {
+                    motionRef = { current: false };
+                    marcherMotionRefs.current.set(marcher.id, motionRef);
+                }
+                let marcherGroupRef = marcherRefs.current.get(marcher.id);
+                if (!marcherGroupRef) {
+                    marcherGroupRef = { current: null };
+                    marcherRefs.current.set(marcher.id, marcherGroupRef);
+                }
 
                 return (
                     <group
                         key={marcher.id}
-                        ref={(node) => {
-                            if (node) marcherRefs.current.set(marcher.id, node);
-                            else marcherRefs.current.delete(marcher.id);
-                        }}
-                        position={canvasCoordinatesToWorld(
-                            marcherPage,
-                            fieldProperties,
-                        )}
-                        rotation={[
-                            0,
-                            THREE.MathUtils.degToRad(
-                                -marcherPage.rotation_degrees,
-                            ),
-                            0,
-                        ]}
+                        ref={marcherGroupRef}
                         visible={appearance.visible}
                     >
                         <Marcher3D
@@ -302,6 +329,7 @@ function MarcherFormation({
                             uniformStyle={uniformStyle}
                             instrumentFinish={instrumentFinish}
                             detailDistance={detailDistance}
+                            motionRef={motionRef}
                         />
                     </group>
                 );
@@ -330,16 +358,7 @@ export default function ThreeDViewer() {
         ...marcherAppearancesQueryOptions(selectedPage?.id, queryClient),
         placeholderData: keepPreviousData,
     });
-    const nearbyPages = useMemo(
-        () =>
-            selectedPage
-                ? pages.filter(
-                      (page) => Math.abs(page.order - selectedPage.order) <= 2,
-                  )
-                : [],
-        [pages, selectedPage],
-    );
-    const { data: marcherTimelines } = useManyCoordinateData(nearbyPages);
+    const { data: marcherTimelines } = useManyCoordinateData(pages);
 
     useEffect(() => {
         window.localStorage.setItem(

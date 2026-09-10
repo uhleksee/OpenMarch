@@ -1,4 +1,4 @@
-import { ComponentType } from "react";
+import { ComponentType, memo } from "react";
 import { Html } from "@react-three/drei";
 import ToonMarcherModel from "./ToonMarcherModel";
 import type { InstrumentFinish, UniformStyle } from "./viewer3d.types";
@@ -10,6 +10,11 @@ export interface MarcherModelProps {
     uniformStyle: UniformStyle;
     instrumentFinish: InstrumentFinish;
     detailDistance: number;
+    motionRef: MarcherMotionRef;
+}
+
+export interface MarcherMotionRef {
+    current: boolean;
 }
 
 export type MarcherModelComponent = ComponentType<MarcherModelProps>;
@@ -23,10 +28,11 @@ interface Marcher3DProps {
     uniformStyle: UniformStyle;
     instrumentFinish: InstrumentFinish;
     detailDistance: number;
+    motionRef: MarcherMotionRef;
     model?: MarcherModelComponent;
 }
 
-export default function Marcher3D({
+function Marcher3D({
     marcherId,
     drillNumber,
     section,
@@ -35,6 +41,7 @@ export default function Marcher3D({
     uniformStyle,
     instrumentFinish,
     detailDistance,
+    motionRef,
     model: Model = ToonMarcherModel,
 }: Marcher3DProps) {
     return (
@@ -46,10 +53,11 @@ export default function Marcher3D({
                 uniformStyle={uniformStyle}
                 instrumentFinish={instrumentFinish}
                 detailDistance={detailDistance}
+                motionRef={motionRef}
             />
             {labelVisible && (
                 <Html
-                    position={[0, 3.05, 0]}
+                    position={[0, 4.15, 0]}
                     center
                     distanceFactor={18}
                     style={{ pointerEvents: "none" }}
@@ -62,3 +70,5 @@ export default function Marcher3D({
         </group>
     );
 }
+
+export default memo(Marcher3D);
