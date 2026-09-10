@@ -68,3 +68,27 @@ export const hasWorldPositionChanged = (
     const deltaZ = next.z - current.z;
     return deltaX * deltaX + deltaZ * deltaZ > epsilon * epsilon;
 };
+
+const normalizeRadians = (angle: number): number =>
+    Math.atan2(Math.sin(angle), Math.cos(angle));
+
+/**
+ * Turn the lower body toward lateral and forward travel while leaving backward
+ * marching aligned with the upper body.
+ */
+export const getLowerBodyFacingAngle = (
+    deltaX: number,
+    deltaZ: number,
+    upperBodyAngle: number,
+): number => {
+    if (deltaX * deltaX + deltaZ * deltaZ <= 0.000001) return 0;
+
+    const movementAngle = Math.atan2(deltaX, deltaZ);
+    const relativeAngle = normalizeRadians(movementAngle - upperBodyAngle);
+
+    // Backward and deep backward-diagonal movement should not twist the legs
+    // through the body. Marchers keep their feet aligned with their torso.
+    if (Math.abs(relativeAngle) > (Math.PI * 2) / 3) return 0;
+
+    return Math.max(-Math.PI / 2, Math.min(Math.PI / 2, relativeAngle));
+};

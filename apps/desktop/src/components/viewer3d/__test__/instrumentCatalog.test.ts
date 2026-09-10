@@ -26,5 +26,6 @@ describe("3D instrument catalog", () => {
         expect(getMarcherDetailDistance(80)).toBeGreaterThan(
             getMarcherDetailDistance(220),
         );
+        expect(getMarcherDetailDistance(220)).toBeLessThanOrEqual(40);
     });
 });

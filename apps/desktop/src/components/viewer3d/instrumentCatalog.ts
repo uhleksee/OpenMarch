@@ -179,7 +179,7 @@ export const getInstrumentDefinition = (
 };
 
 export const getMarcherDetailDistance = (marcherCount: number): number => {
-    if (marcherCount >= 200) return 118;
-    if (marcherCount >= 120) return 140;
-    return 165;
+    if (marcherCount >= 200) return 34;
+    if (marcherCount >= 120) return 42;
+    return 52;
 };

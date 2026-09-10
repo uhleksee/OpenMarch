@@ -79,7 +79,15 @@ export const getFieldNumberMarkers = (
     return markers;
 };
 
-function Digit({ value, offset }: { value: string; offset: number }) {
+function Digit({
+    value,
+    offset,
+    color,
+}: {
+    value: string;
+    offset: number;
+    color: string;
+}) {
     return (
         <group position={[offset, 0, 0]}>
             {(DIGIT_SEGMENTS[value] ?? []).map((segmentName) => {
@@ -87,7 +95,7 @@ function Digit({ value, offset }: { value: string; offset: number }) {
                 return (
                     <mesh key={segmentName} position={segment.position}>
                         <boxGeometry args={segment.size} />
-                        <meshBasicMaterial color={STORYBOOK_THEME.line} />
+                        <meshBasicMaterial color={color} />
                     </mesh>
                 );
             })}
@@ -95,7 +103,13 @@ function Digit({ value, offset }: { value: string; offset: number }) {
     );
 }
 
-function FieldNumber({ marker }: { marker: FieldNumberMarker }) {
+function FieldNumber({
+    marker,
+    color,
+}: {
+    marker: FieldNumberMarker;
+    color: string;
+}) {
     const digits = marker.label.padStart(2, "0").split("");
     return (
         <group
@@ -103,21 +117,23 @@ function FieldNumber({ marker }: { marker: FieldNumberMarker }) {
             rotation={[0, marker.rotation, 0]}
             scale={marker.scale}
         >
-            <Digit value={digits[0]} offset={-0.55} />
-            <Digit value={digits[1]} offset={0.55} />
+            <Digit value={digits[0]} offset={-0.55} color={color} />
+            <Digit value={digits[1]} offset={0.55} color={color} />
         </group>
     );
 }
 
 export default function FieldNumbers({
     fieldProperties,
+    color = STORYBOOK_THEME.line,
 }: {
     fieldProperties: FieldProperties;
+    color?: string;
 }) {
     return (
         <group>
             {getFieldNumberMarkers(fieldProperties).map((marker) => (
-                <FieldNumber key={marker.key} marker={marker} />
+                <FieldNumber key={marker.key} marker={marker} color={color} />
             ))}
         </group>
     );

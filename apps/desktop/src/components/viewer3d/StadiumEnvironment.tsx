@@ -1,21 +1,13 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import * as THREE from "three";
-import { SKIN_TONES, STORYBOOK_THEME } from "./sceneTheme";
+import { getFieldSceneTheme } from "./sceneTheme";
+import type { FieldScene } from "./viewer3d.types";
 
 interface StadiumEnvironmentProps {
     fieldWidth: number;
     fieldDepth: number;
-    showCrowd: boolean;
+    scene: FieldScene;
 }
-
-const CROWD_COLORS = [
-    "#f3d36a",
-    "#e97d68",
-    "#6b9ac4",
-    "#8ab17d",
-    "#9b7bb5",
-    "#f1ede2",
-] as const;
 
 const SKY_VERTEX_SHADER = `
     varying vec3 worldPosition;
@@ -36,15 +28,22 @@ const SKY_FRAGMENT_SHADER = `
     }
 `;
 
-function StorybookSky({ radius }: { radius: number }) {
+function StorybookSky({
+    radius,
+    scene,
+}: {
+    radius: number;
+    scene: FieldScene;
+}) {
+    const theme = getFieldSceneTheme(scene);
     const uniforms = useMemo(
         () => ({
-            topColor: { value: new THREE.Color(STORYBOOK_THEME.skyTop) },
+            topColor: { value: new THREE.Color(theme.skyTop) },
             horizonColor: {
-                value: new THREE.Color(STORYBOOK_THEME.skyHorizon),
+                value: new THREE.Color(theme.skyHorizon),
             },
         }),
-        [],
+        [theme.skyHorizon, theme.skyTop],
     );
 
     return (
@@ -64,10 +63,13 @@ function StorybookSky({ radius }: { radius: number }) {
 function Cloud({
     position,
     scale = 1,
+    scene,
 }: {
     position: [number, number, number];
     scale?: number;
+    scene: FieldScene;
 }) {
+    const theme = getFieldSceneTheme(scene);
     return (
         <group position={position} scale={scale}>
             {[
@@ -79,11 +81,7 @@ function Cloud({
                 <mesh key={index} position={[x, y, z]} scale={size}>
                     <icosahedronGeometry args={[1, 2]} />
                     <meshToonMaterial
-                        color={
-                            index % 2
-                                ? STORYBOOK_THEME.cloudLight
-                                : STORYBOOK_THEME.cloudShade
-                        }
+                        color={index % 2 ? theme.cloudLight : theme.cloudShade}
                     />
                 </mesh>
             ))}
@@ -95,20 +93,20 @@ function Tree({
     position,
     scale,
     shade,
+    scene,
 }: {
     position: [number, number, number];
     scale: number;
     shade: "light" | "dark";
+    scene: FieldScene;
 }) {
-    const crownColor =
-        shade === "light"
-            ? STORYBOOK_THEME.treeLight
-            : STORYBOOK_THEME.treeDark;
+    const theme = getFieldSceneTheme(scene);
+    const crownColor = shade === "light" ? theme.treeLight : theme.treeDark;
     return (
         <group position={position} scale={scale}>
             <mesh position={[0, 1.35, 0]} castShadow>
                 <cylinderGeometry args={[0.18, 0.28, 2.7, 6]} />
-                <meshToonMaterial color={STORYBOOK_THEME.treeTrunk} />
+                <meshToonMaterial color={theme.treeTrunk} />
             </mesh>
             <mesh position={[0, 3.3, 0]} castShadow>
                 <icosahedronGeometry args={[1.55, 1]} />
@@ -126,90 +124,20 @@ function Tree({
     );
 }
 
-function Crowd({ width, facing }: { width: number; facing: 1 | -1 }) {
-    const bodyRef = useRef<THREE.InstancedMesh>(null);
-    const headRef = useRef<THREE.InstancedMesh>(null);
-    const columns = Math.max(8, Math.floor(width / 2.15));
-    const rowCount = 5;
-    const count = columns * rowCount;
-
-    useEffect(() => {
-        const bodies = bodyRef.current;
-        const heads = headRef.current;
-        if (!bodies || !heads) return;
-
-        const dummy = new THREE.Object3D();
-        let instance = 0;
-        for (let row = 0; row < rowCount; row += 1) {
-            for (let column = 0; column < columns; column += 1) {
-                const x =
-                    -width / 2 +
-                    ((column + 0.5) / columns) * width +
-                    (row % 2 ? 0.12 : -0.12);
-                const bodyY = 0.78 + row * 0.54;
-                const z = facing * row * 0.7;
-
-                dummy.position.set(x, bodyY, z);
-                dummy.scale.set(0.44, 0.62, 0.34);
-                dummy.rotation.set(0, 0, 0);
-                dummy.updateMatrix();
-                bodies.setMatrixAt(instance, dummy.matrix);
-                bodies.setColorAt(
-                    instance,
-                    new THREE.Color(
-                        CROWD_COLORS[(column + row * 3) % CROWD_COLORS.length],
-                    ),
-                );
-
-                dummy.position.set(x, bodyY + 0.55, z);
-                dummy.scale.setScalar(0.28);
-                dummy.updateMatrix();
-                heads.setMatrixAt(instance, dummy.matrix);
-                heads.setColorAt(
-                    instance,
-                    new THREE.Color(
-                        SKIN_TONES[(column * 2 + row) % SKIN_TONES.length],
-                    ),
-                );
-                instance += 1;
-            }
-        }
-
-        bodies.instanceMatrix.needsUpdate = true;
-        heads.instanceMatrix.needsUpdate = true;
-        if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
-        if (heads.instanceColor) heads.instanceColor.needsUpdate = true;
-        bodies.computeBoundingSphere();
-        heads.computeBoundingSphere();
-    }, [columns, facing, width]);
-
-    return (
-        <group>
-            <instancedMesh ref={bodyRef} args={[undefined, undefined, count]}>
-                <boxGeometry args={[1, 1, 1]} />
-                <meshToonMaterial vertexColors />
-            </instancedMesh>
-            <instancedMesh ref={headRef} args={[undefined, undefined, count]}>
-                <icosahedronGeometry args={[1, 1]} />
-                <meshToonMaterial vertexColors />
-            </instancedMesh>
-        </group>
-    );
-}
-
 function Bleachers({
     position,
     width,
     facing,
     withPressBox = false,
-    showCrowd,
+    scene,
 }: {
     position: [number, number, number];
     width: number;
     facing: 1 | -1;
     withPressBox?: boolean;
-    showCrowd: boolean;
+    scene: FieldScene;
 }) {
+    const theme = getFieldSceneTheme(scene);
     return (
         <group position={position}>
             {[0, 1, 2, 3, 4].map((level) => (
@@ -221,11 +149,7 @@ function Bleachers({
                 >
                     <boxGeometry args={[width, 0.28 + level * 0.07, 1.35]} />
                     <meshToonMaterial
-                        color={
-                            level % 2
-                                ? STORYBOOK_THEME.bleacher
-                                : STORYBOOK_THEME.bleacherDark
-                        }
+                        color={level % 2 ? theme.bleacher : theme.bleacherDark}
                     />
                 </mesh>
             ))}
@@ -233,21 +157,22 @@ function Bleachers({
                 <group position={[0, 5.3, facing * 2.6]}>
                     <mesh castShadow>
                         <boxGeometry args={[width * 0.38, 2.8, 2.8]} />
-                        <meshToonMaterial color={STORYBOOK_THEME.pressBox} />
+                        <meshToonMaterial color={theme.pressBox} />
                     </mesh>
                     <mesh position={[0, 0.28, -facing * 1.42]}>
                         <boxGeometry args={[width * 0.3, 1.05, 0.06]} />
-                        <meshToonMaterial color={STORYBOOK_THEME.window} />
+                        {scene === "night" ? (
+                            <meshBasicMaterial color={theme.window} />
+                        ) : (
+                            <meshToonMaterial color={theme.window} />
+                        )}
                     </mesh>
                     <mesh position={[0, 1.6, 0]} castShadow>
                         <boxGeometry args={[width * 0.44, 0.18, 3.2]} />
-                        <meshToonMaterial
-                            color={STORYBOOK_THEME.bleacherDark}
-                        />
+                        <meshToonMaterial color={theme.bleacherDark} />
                     </mesh>
                 </group>
             )}
-            {showCrowd && <Crowd width={width * 0.94} facing={facing} />}
         </group>
     );
 }
@@ -256,23 +181,34 @@ function LightPole({
     position,
     height,
     face,
+    scene,
 }: {
     position: [number, number, number];
     height: number;
     face: 1 | -1;
+    scene: FieldScene;
 }) {
+    const theme = getFieldSceneTheme(scene);
     return (
         <group position={position}>
             <mesh position={[0, height / 2, 0]} castShadow>
                 <cylinderGeometry args={[0.12, 0.2, height, 8]} />
-                <meshToonMaterial color={STORYBOOK_THEME.pole} />
+                <meshToonMaterial color={theme.pole} />
             </mesh>
             <mesh
                 position={[0, height, face * 0.42]}
                 rotation={[0.2 * face, 0, 0]}
             >
-                <boxGeometry args={[1.8, 0.45, 0.22]} />
-                <meshToonMaterial color={STORYBOOK_THEME.uniformLight} />
+                <boxGeometry
+                    args={
+                        scene === "night" ? [3.2, 0.9, 0.26] : [1.8, 0.45, 0.22]
+                    }
+                />
+                {scene === "night" ? (
+                    <meshBasicMaterial color="#fff4cf" />
+                ) : (
+                    <meshToonMaterial color={theme.uniformLight} />
+                )}
             </mesh>
         </group>
     );
@@ -281,9 +217,10 @@ function LightPole({
 export default function StadiumEnvironment({
     fieldWidth,
     fieldDepth,
-    showCrowd,
+    scene,
 }: StadiumEnvironmentProps) {
     const largestDimension = Math.max(fieldWidth, fieldDepth);
+    const theme = getFieldSceneTheme(scene);
     const treePositions = [
         [-fieldWidth * 0.58, -fieldDepth * 0.68, 1.3],
         [-fieldWidth * 0.48, -fieldDepth * 0.9, 1.8],
@@ -294,7 +231,7 @@ export default function StadiumEnvironment({
 
     return (
         <group>
-            <StorybookSky radius={largestDimension * 5} />
+            <StorybookSky radius={largestDimension * 5} scene={scene} />
 
             <mesh
                 position={[0, -0.24, 0]}
@@ -302,39 +239,43 @@ export default function StadiumEnvironment({
                 receiveShadow
             >
                 <planeGeometry args={[fieldWidth * 3.8, fieldDepth * 5.2]} />
-                <meshToonMaterial color={STORYBOOK_THEME.grassOutside} />
+                <meshToonMaterial color={theme.grassOutside} />
             </mesh>
 
             <mesh position={[0, -0.14, -fieldDepth / 2 - 2.8]} receiveShadow>
                 <boxGeometry args={[fieldWidth + 11, 0.12, 5.2]} />
-                <meshToonMaterial color={STORYBOOK_THEME.track} />
+                <meshToonMaterial color={theme.track} />
             </mesh>
             <mesh position={[0, -0.14, fieldDepth / 2 + 2.8]} receiveShadow>
                 <boxGeometry args={[fieldWidth + 11, 0.12, 5.2]} />
-                <meshToonMaterial color={STORYBOOK_THEME.track} />
+                <meshToonMaterial color={theme.track} />
             </mesh>
             <mesh position={[-fieldWidth / 2 - 2.8, -0.14, 0]} receiveShadow>
                 <boxGeometry args={[5.2, 0.12, fieldDepth]} />
-                <meshToonMaterial color={STORYBOOK_THEME.trackEdge} />
+                <meshToonMaterial color={theme.trackEdge} />
             </mesh>
             <mesh position={[fieldWidth / 2 + 2.8, -0.14, 0]} receiveShadow>
                 <boxGeometry args={[5.2, 0.12, fieldDepth]} />
-                <meshToonMaterial color={STORYBOOK_THEME.trackEdge} />
+                <meshToonMaterial color={theme.trackEdge} />
             </mesh>
 
-            <Bleachers
-                position={[0, 0, -fieldDepth / 2 - 9]}
-                width={fieldWidth * 0.62}
-                facing={-1}
-                showCrowd={showCrowd}
-            />
-            <Bleachers
-                position={[0, 0, fieldDepth / 2 + 9]}
-                width={fieldWidth * 0.72}
-                facing={1}
-                withPressBox
-                showCrowd={showCrowd}
-            />
+            {scene !== "practice" && (
+                <>
+                    <Bleachers
+                        position={[0, 0, -fieldDepth / 2 - 9]}
+                        width={fieldWidth * 0.62}
+                        facing={-1}
+                        scene={scene}
+                    />
+                    <Bleachers
+                        position={[0, 0, fieldDepth / 2 + 9]}
+                        width={fieldWidth * 0.72}
+                        facing={1}
+                        withPressBox
+                        scene={scene}
+                    />
+                </>
+            )}
 
             {[-0.43, 0.43].flatMap((xFactor) =>
                 ([-1, 1] as const).map((zFactor) => (
@@ -345,59 +286,86 @@ export default function StadiumEnvironment({
                             0,
                             zFactor * (fieldDepth / 2 + 7),
                         ]}
-                        height={largestDimension * 0.09}
+                        height={
+                            largestDimension * (scene === "night" ? 0.16 : 0.09)
+                        }
                         face={zFactor === 1 ? -1 : 1}
+                        scene={scene}
                     />
                 )),
             )}
 
-            {treePositions.map(([x, z, scale], index) => (
-                <Tree
-                    key={index}
-                    position={[x, 0, z]}
-                    scale={scale}
-                    shade={index % 2 ? "light" : "dark"}
-                />
-            ))}
+            {scene !== "night" &&
+                treePositions.map(([x, z, scale], index) => (
+                    <Tree
+                        key={index}
+                        position={[x, 0, z]}
+                        scale={scale}
+                        shade={index % 2 ? "light" : "dark"}
+                        scene={scene}
+                    />
+                ))}
 
-            <group position={[0, 5, -fieldDepth * 2.2]}>
-                <mesh scale={[fieldWidth * 0.9, 18, 24]}>
-                    <icosahedronGeometry args={[1, 2]} />
-                    <meshToonMaterial color={STORYBOOK_THEME.hillDark} />
-                </mesh>
-                <mesh
-                    position={[-fieldWidth * 0.55, -2, 4]}
-                    scale={[fieldWidth * 0.48, 13, 18]}
-                >
-                    <icosahedronGeometry args={[1, 2]} />
-                    <meshToonMaterial color={STORYBOOK_THEME.hillLight} />
-                </mesh>
-            </group>
+            {scene !== "practice" && (
+                <group position={[0, 5, -fieldDepth * 2.2]}>
+                    <mesh scale={[fieldWidth * 0.9, 18, 24]}>
+                        <icosahedronGeometry args={[1, 2]} />
+                        <meshToonMaterial color={theme.hillDark} />
+                    </mesh>
+                    <mesh
+                        position={[-fieldWidth * 0.55, -2, 4]}
+                        scale={[fieldWidth * 0.48, 13, 18]}
+                    >
+                        <icosahedronGeometry args={[1, 2]} />
+                        <meshToonMaterial color={theme.hillLight} />
+                    </mesh>
+                </group>
+            )}
 
-            <Cloud
-                position={[
-                    -fieldWidth * 0.34,
-                    largestDimension * 0.3,
-                    -fieldDepth * 1.8,
-                ]}
-                scale={largestDimension * 0.025}
-            />
-            <Cloud
-                position={[
-                    fieldWidth * 0.3,
-                    largestDimension * 0.36,
-                    -fieldDepth * 2.1,
-                ]}
-                scale={largestDimension * 0.018}
-            />
-            <Cloud
-                position={[
-                    fieldWidth * 0.7,
-                    largestDimension * 0.27,
-                    fieldDepth * 0.5,
-                ]}
-                scale={largestDimension * 0.014}
-            />
+            {scene === "storybook" && (
+                <>
+                    <Cloud
+                        position={[
+                            -fieldWidth * 0.34,
+                            largestDimension * 0.3,
+                            -fieldDepth * 1.8,
+                        ]}
+                        scale={largestDimension * 0.025}
+                        scene={scene}
+                    />
+                    <Cloud
+                        position={[
+                            fieldWidth * 0.3,
+                            largestDimension * 0.36,
+                            -fieldDepth * 2.1,
+                        ]}
+                        scale={largestDimension * 0.018}
+                        scene={scene}
+                    />
+                    <Cloud
+                        position={[
+                            fieldWidth * 0.7,
+                            largestDimension * 0.27,
+                            fieldDepth * 0.5,
+                        ]}
+                        scale={largestDimension * 0.014}
+                        scene={scene}
+                    />
+                </>
+            )}
+
+            {scene === "practice" && (
+                <group position={[fieldWidth * 0.32, 1.35, -fieldDepth * 0.72]}>
+                    <mesh>
+                        <boxGeometry args={[fieldWidth * 0.18, 2.7, 3.8]} />
+                        <meshToonMaterial color={theme.pressBox} />
+                    </mesh>
+                    <mesh position={[0, 1.5, 0]}>
+                        <boxGeometry args={[fieldWidth * 0.21, 0.22, 4.3]} />
+                        <meshToonMaterial color={theme.bleacherDark} />
+                    </mesh>
+                </group>
+            )}
         </group>
     );
 }
