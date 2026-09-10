@@ -617,6 +617,7 @@ export default function Canvas({
             ref={containerRef}
             className={clsx(
                 `rounded-6 relative h-full w-full overflow-hidden`,
+                className,
                 {
                     "pointer-events-none pt-128": isFullscreen,
                 },

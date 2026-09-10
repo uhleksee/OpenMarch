@@ -1,4 +1,3 @@
-import Canvas from "@/components/canvas/Canvas";
 import Toolbar from "@/components/toolbar/Toolbar";
 import Inspector from "@/components/inspector/Inspector";
 import SidebarModal from "@/components/sidebar/SidebarModal";
@@ -14,8 +13,8 @@ import { SelectedAudioFileProvider } from "@/context/SelectedAudioFileContext";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import TitleBar from "@/components/titlebar/TitleBar";
 import { useUiSettingsStore } from "./stores/UiSettingsStore";
-import CanvasZoomControls from "@/components/canvas/CanvasZoomControls";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
+import FieldView from "@/components/viewer3d/FieldView";
 import Plugin from "./global/classes/Plugin";
 import Sidebar from "@/components/sidebar/Sidebar";
 import Toaster from "./components/ui/Toaster";
@@ -275,13 +274,11 @@ function App() {
                                                                 <SidebarModal />
                                                             </>
                                                         )}
-                                                        <Canvas
+                                                        <FieldView
+                                                            canvas={appCanvas}
                                                             onCanvasReady={
                                                                 setAppCanvas
                                                             }
-                                                        />
-                                                        <CanvasZoomControls
-                                                            canvas={appCanvas}
                                                         />
                                                     </div>
                                                     <TimelineContainer />
