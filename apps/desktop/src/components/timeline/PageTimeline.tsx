@@ -349,7 +349,7 @@ export default function PageTimeline() {
                                         {/* ------ progress bar (fullscreen) ------ */}
                                         <div
                                             data-playback-progress
-                                            className="bg-accent/25 absolute top-0 left-0 z-0 hidden h-full w-full"
+                                            className="bg-accent/25 invisible absolute top-0 left-0 z-0 h-full w-full origin-left scale-x-0"
                                         />
                                     </div>
                                     {/* ------ page resize dragging ------ */}

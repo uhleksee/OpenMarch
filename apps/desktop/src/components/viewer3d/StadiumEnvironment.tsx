@@ -1,7 +1,11 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { LIGHTING_THEMES, STORYBOOK_THEME } from "./sceneTheme";
+import {
+    getSceneLightPosition,
+    LIGHTING_THEMES,
+    STORYBOOK_THEME,
+} from "./sceneTheme";
 import type { LightingMode } from "./viewer3d.types";
 
 interface StadiumEnvironmentProps {
@@ -85,13 +89,11 @@ function CelestialBody({
     const isNight = lightingMode === "night";
     const isSunset = lightingMode === "sunset";
     const color = isNight ? "#dceaff" : isSunset ? "#ffad67" : "#fff0bf";
-    const position: [number, number, number] = isNight
-        ? [fieldWidth * 0.58, largestDimension * 0.58, -fieldDepth * 1.9]
-        : [
-              -fieldWidth * (isSunset ? 0.62 : 0.48),
-              largestDimension * (isSunset ? 0.24 : 0.62),
-              -fieldDepth * 1.9,
-          ];
+    const position = getSceneLightPosition(
+        lightingMode,
+        fieldWidth,
+        fieldDepth,
+    );
     const radius = largestDimension * (isSunset ? 0.055 : 0.043);
 
     return (
@@ -395,13 +397,6 @@ export default function StadiumEnvironment({
                 width={fieldWidth * 0.62}
                 facing={-1}
             />
-            <Bleachers
-                position={[0, 0, fieldDepth / 2 + 9]}
-                width={fieldWidth * 0.72}
-                facing={1}
-                withPressBox
-            />
-
             {[-0.43, 0.43].flatMap((xFactor) =>
                 ([-1, 1] as const).map((zFactor) => (
                     <StadiumLightTower

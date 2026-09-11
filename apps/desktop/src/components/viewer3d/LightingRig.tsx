@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { LIGHTING_THEMES } from "./sceneTheme";
+import { getSceneLightPosition, LIGHTING_THEMES } from "./sceneTheme";
 import type { LightingMode } from "./viewer3d.types";
 
 interface LightingRigProps {
@@ -18,6 +18,12 @@ export default function LightingRig({
     const { gl, scene } = useThree();
     const largestDimension = Math.max(fieldWidth, fieldDepth);
     const lighting = LIGHTING_THEMES[mode];
+    const lightPosition = getSceneLightPosition(mode, fieldWidth, fieldDepth);
+    const rimPosition: [number, number, number] = [
+        -lightPosition[0],
+        largestDimension * 0.34,
+        -lightPosition[2],
+    ];
     const shadowWarmupFrames = useRef(0);
 
     useEffect(() => {
@@ -58,11 +64,7 @@ export default function LightingRig({
             />
             <directionalLight
                 color={lighting.key}
-                position={[
-                    fieldWidth * lighting.sunX,
-                    largestDimension * lighting.sunHeight,
-                    fieldDepth * lighting.sunZ,
-                ]}
+                position={lightPosition}
                 intensity={lighting.keyIntensity}
                 castShadow
                 shadow-mapSize-width={2048}
@@ -78,11 +80,7 @@ export default function LightingRig({
             />
             <directionalLight
                 color={lighting.rim}
-                position={[
-                    -fieldWidth * lighting.sunX,
-                    largestDimension * 0.34,
-                    -fieldDepth * lighting.sunZ,
-                ]}
+                position={rimPosition}
                 intensity={lighting.rimIntensity}
             />
         </>

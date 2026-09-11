@@ -40,9 +40,9 @@ export const LIGHTING_THEMES = {
         rim: "#a9d8ff",
         rimIntensity: 0.34,
         exposure: 1.08,
-        sunHeight: 0.68,
+        sunHeight: 0.62,
         sunX: -0.48,
-        sunZ: 0.72,
+        sunZ: -0.92,
         fogNearFactor: 1.35,
         fogFarFactor: 4.4,
     },
@@ -59,8 +59,8 @@ export const LIGHTING_THEMES = {
         rimIntensity: 0.62,
         exposure: 0.98,
         sunHeight: 0.27,
-        sunX: -0.72,
-        sunZ: 0.56,
+        sunX: -0.62,
+        sunZ: -0.95,
         fogNearFactor: 1.05,
         fogFarFactor: 3.75,
     },
@@ -76,13 +76,30 @@ export const LIGHTING_THEMES = {
         rim: "#5f86c9",
         rimIntensity: 0.45,
         exposure: 0.78,
-        sunHeight: 0.72,
-        sunX: 0.56,
-        sunZ: -0.48,
+        sunHeight: 0.58,
+        sunX: 0.58,
+        sunZ: -0.92,
         fogNearFactor: 1.15,
         fogFarFactor: 3.7,
     },
 } as const;
+
+export type SceneLightingMode = keyof typeof LIGHTING_THEMES;
+
+export const getSceneLightPosition = (
+    mode: SceneLightingMode,
+    fieldWidth: number,
+    fieldDepth: number,
+): [number, number, number] => {
+    const largestDimension = Math.max(fieldWidth, fieldDepth);
+    const lighting = LIGHTING_THEMES[mode];
+    const distance = 1.35;
+    return [
+        largestDimension * lighting.sunX * distance,
+        largestDimension * lighting.sunHeight * distance,
+        largestDimension * lighting.sunZ * distance,
+    ];
+};
 
 export const CINEMATIC_OVERLAYS = {
     day: {

@@ -55,28 +55,56 @@ export default function TimelineContainer() {
         if (!isPlaying) return;
 
         let updateFrame = 0;
-        let scrollFrame = 0;
+        let activeHighlight: HTMLElement | null = null;
+        let activeProgress: HTMLElement | null = null;
+        const pageElements = new Map<
+            number,
+            {
+                highlight: HTMLElement | null;
+                progress: HTMLElement | null;
+                destinationDuration: number | null;
+            }
+        >();
+
+        pages.forEach((page, pageIndex) => {
+            const container = document.querySelector(
+                `[timeline-page-id="${page.id}"]`,
+            );
+            const highlight = container?.matches("[data-page-highlight]")
+                ? container
+                : container?.querySelector("[data-page-highlight]");
+            const destination = pages[pageIndex + 1];
+            const destinationContainer = destination
+                ? document.querySelector(
+                      `[timeline-page-id="${destination.id}"]`,
+                  )
+                : null;
+            const progress = destinationContainer?.querySelector(
+                "[data-playback-progress]",
+            );
+            pageElements.set(page.id, {
+                highlight: highlight instanceof HTMLElement ? highlight : null,
+                progress: progress instanceof HTMLElement ? progress : null,
+                destinationDuration: destination?.duration ?? null,
+            });
+        });
 
         const clearPlaybackDecorations = () => {
-            const highlighted = document.querySelector(
-                '[data-playback-active="true"]',
-            );
-            if (highlighted instanceof HTMLElement) {
-                highlighted.dataset.playbackActive = "false";
-                highlighted.classList.remove("border-accent");
-                highlighted.classList.add("border-stroke");
+            if (activeHighlight) {
+                activeHighlight.dataset.playbackActive = "false";
+                activeHighlight.classList.remove("border-accent");
+                activeHighlight.classList.add("border-stroke");
+                activeHighlight = null;
             }
 
-            const progress = document.querySelector(
-                '[data-playback-progress-active="true"]',
-            );
-            if (progress instanceof HTMLElement) {
-                progress.dataset.playbackProgressActive = "false";
-                progress.classList.add("hidden");
-                progress.getAnimations().forEach((animation) => {
+            if (activeProgress) {
+                activeProgress.dataset.playbackProgressActive = "false";
+                activeProgress.classList.add("invisible");
+                activeProgress.getAnimations().forEach((animation) => {
                     animation.cancel();
                 });
-                progress.style.transform = "";
+                activeProgress.style.transform = "";
+                activeProgress = null;
             }
         };
 
@@ -84,58 +112,29 @@ export default function TimelineContainer() {
             clearPlaybackDecorations();
             if (pageId == null) return;
 
-            const pageContainer = document.querySelector(
-                `[timeline-page-id="${pageId}"]`,
-            );
-            const highlight = pageContainer?.matches("[data-page-highlight]")
-                ? pageContainer
-                : pageContainer?.querySelector("[data-page-highlight]");
-            if (highlight instanceof HTMLElement) {
-                highlight.dataset.playbackActive = "true";
-                highlight.classList.remove("border-stroke");
-                highlight.classList.add("border-accent");
+            const elements = pageElements.get(pageId);
+            if (!elements) return;
+
+            if (elements.highlight) {
+                activeHighlight = elements.highlight;
+                activeHighlight.dataset.playbackActive = "true";
+                activeHighlight.classList.remove("border-stroke");
+                activeHighlight.classList.add("border-accent");
             }
 
-            const pageIndex = pages.findIndex((page) => page.id === pageId);
-            const destinationPage = pages[pageIndex + 1];
-            if (destinationPage) {
-                const destinationContainer = document.querySelector(
-                    `[timeline-page-id="${destinationPage.id}"]`,
+            if (elements.progress && elements.destinationDuration != null) {
+                activeProgress = elements.progress;
+                activeProgress.dataset.playbackProgressActive = "true";
+                activeProgress.classList.remove("invisible");
+                activeProgress.animate(
+                    [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
+                    {
+                        duration: elements.destinationDuration * 1000,
+                        easing: "linear",
+                        fill: "forwards",
+                    },
                 );
-                const progress = destinationContainer?.querySelector(
-                    "[data-playback-progress]",
-                );
-                if (progress instanceof HTMLElement) {
-                    progress.dataset.playbackProgressActive = "true";
-                    progress.classList.remove("hidden");
-                    progress.style.transformOrigin = "left center";
-                    progress.animate(
-                        [
-                            { transform: "scaleX(0)" },
-                            { transform: "scaleX(1)" },
-                        ],
-                        {
-                            duration: destinationPage.duration * 1000,
-                            easing: "linear",
-                            fill: "forwards",
-                        },
-                    );
-                }
             }
-
-            const timeline = timelineRef.current;
-            if (!timeline || !(pageContainer instanceof HTMLElement)) return;
-            // Let the boundary frame paint before asking the browser to center
-            // the next page. This keeps layout work out of the audio clock's
-            // critical transition frame.
-            cancelAnimationFrame(scrollFrame);
-            scrollFrame = requestAnimationFrame(() => {
-                pageContainer.scrollIntoView({
-                    block: "nearest",
-                    inline: "center",
-                    behavior: "auto",
-                });
-            });
         };
 
         const schedulePlaybackPage = (pageId: number | null) => {
@@ -155,7 +154,6 @@ export default function TimelineContainer() {
         return () => {
             unsubscribe();
             cancelAnimationFrame(updateFrame);
-            cancelAnimationFrame(scrollFrame);
             clearPlaybackDecorations();
         };
     }, [isPlaying, pages]);
