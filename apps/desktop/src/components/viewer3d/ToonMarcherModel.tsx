@@ -3,12 +3,9 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import { getInstrumentDefinition, type MarcherPose } from "./instrumentCatalog";
-import MarcherEquipment, {
-    SimplifiedMarcherEquipment,
-} from "./MarcherEquipment";
+import MarcherEquipment from "./MarcherEquipment";
 import { SKIN_TONES, STORYBOOK_THEME } from "./sceneTheme";
 import type { MarcherModelProps } from "./Marcher3D";
-import { getSynchronizedStride } from "./viewer3d.utils";
 
 const POSES: Record<
     MarcherPose,
@@ -78,12 +75,12 @@ const getVariation = (seed: number) => {
         skin: SKIN_TONES[Math.floor(random * SKIN_TONES.length)],
         height: 1.06 + random * 0.1,
         plumeLean: (random - 0.5) * 0.14,
+        phase: random * Math.PI * 2,
     };
 };
 
 export default function ToonMarcherModel({
     color,
-    equipmentAccentColor,
     variantSeed,
     section,
     uniformStyle,
@@ -95,14 +92,12 @@ export default function ToonMarcherModel({
     const detailedRef = useRef<THREE.Group>(null);
     const distantRef = useRef<THREE.Group>(null);
     const equipmentRef = useRef<THREE.Group>(null);
-    const distantEquipmentRef = useRef<THREE.Group>(null);
-    const lowerBodyRef = useRef<THREE.Group>(null);
     const leftArmRef = useRef<THREE.Group>(null);
     const rightArmRef = useRef<THREE.Group>(null);
     const leftLegRef = useRef<THREE.Group>(null);
     const rightLegRef = useRef<THREE.Group>(null);
+    const animationPhaseRef = useRef(0);
     const motionBlendRef = useRef(0);
-    const isDetailedRef = useRef(false);
     const detailFrameRef = useRef(variantSeed % 12);
     const worldPositionRef = useRef(new THREE.Vector3());
     const { isPlaying } = useIsPlaying()!;
@@ -114,88 +109,62 @@ export default function ToonMarcherModel({
     const isSummer = uniformStyle === "summer";
     const pantsColor = isSummer ? color : STORYBOOK_THEME.uniformDark;
 
-    useFrame(({ camera, clock }, delta) => {
+    useFrame(({ camera }, delta) => {
         const root = rootRef.current;
         const leftArm = leftArmRef.current;
         const rightArm = rightArmRef.current;
         const leftLeg = leftLegRef.current;
         const rightLeg = rightLegRef.current;
         const equipment = equipmentRef.current;
-        const distantEquipment = distantEquipmentRef.current;
-        const lowerBody = lowerBodyRef.current;
         if (
             !root ||
             !leftArm ||
             !rightArm ||
             !leftLeg ||
             !rightLeg ||
-            !equipment ||
-            !distantEquipment ||
-            !lowerBody
+            !equipment
         )
             return;
 
-        detailFrameRef.current += 1;
-        if (detailFrameRef.current % 12 === 0) {
-            root.getWorldPosition(worldPositionRef.current);
-            const showDetail =
-                camera.position.distanceTo(worldPositionRef.current) <
-                detailDistance;
-            isDetailedRef.current = showDetail;
-            if (detailedRef.current) detailedRef.current.visible = showDetail;
-            if (distantRef.current) distantRef.current.visible = !showDetail;
-        }
-
         const smoothing = 1 - Math.exp(-delta * 11);
         const movementTarget = isPlaying && motionRef.current ? 1 : 0;
-        const isSettled =
-            movementTarget === 0 &&
-            motionBlendRef.current < 0.001 &&
-            Math.abs(root.position.y) < 0.001 &&
-            Math.abs(root.rotation.z) < 0.001 &&
-            Math.abs(lowerBody.rotation.y) < 0.001 &&
-            Math.abs(equipment.rotation.z) < 0.001;
-        if (isSettled) return;
-
         motionBlendRef.current = THREE.MathUtils.lerp(
             motionBlendRef.current,
             movementTarget,
             1 - Math.exp(-delta * 14),
         );
-        const phase = clock.elapsedTime * 5.4;
-        const stride = getSynchronizedStride(
-            clock.elapsedTime,
-            motionBlendRef.current,
-        );
+        let phase = animationPhaseRef.current + variation.phase;
+        if (motionBlendRef.current > 0.001) {
+            animationPhaseRef.current += delta * 5.4;
+            phase = animationPhaseRef.current + variation.phase;
+        }
+        const stride =
+            Math.sin(phase) *
+            0.34 *
+            instrument.strideScale *
+            motionBlendRef.current;
 
-        lowerBody.rotation.y = THREE.MathUtils.lerp(
-            lowerBody.rotation.y,
-            motionRef.current ? motionRef.lowerBodyAngle : 0,
+        const armSwing = instrument.pose === "free" ? 0.72 : 0.1;
+        leftArm.rotation.x = THREE.MathUtils.lerp(
+            leftArm.rotation.x,
+            pose.leftArmX - stride * armSwing,
             smoothing,
         );
-        if (isDetailedRef.current) {
-            const armSwing = instrument.pose === "free" ? 0.72 : 0.1;
-            leftArm.rotation.x = THREE.MathUtils.lerp(
-                leftArm.rotation.x,
-                pose.leftArmX - stride * armSwing,
-                smoothing,
-            );
-            rightArm.rotation.x = THREE.MathUtils.lerp(
-                rightArm.rotation.x,
-                pose.rightArmX + stride * armSwing,
-                smoothing,
-            );
-            leftLeg.rotation.x = THREE.MathUtils.lerp(
-                leftLeg.rotation.x,
-                stride,
-                smoothing,
-            );
-            rightLeg.rotation.x = THREE.MathUtils.lerp(
-                rightLeg.rotation.x,
-                -stride,
-                smoothing,
-            );
-        }
+        rightArm.rotation.x = THREE.MathUtils.lerp(
+            rightArm.rotation.x,
+            pose.rightArmX + stride * armSwing,
+            smoothing,
+        );
+        leftLeg.rotation.x = THREE.MathUtils.lerp(
+            leftLeg.rotation.x,
+            stride,
+            smoothing,
+        );
+        rightLeg.rotation.x = THREE.MathUtils.lerp(
+            rightLeg.rotation.x,
+            -stride,
+            smoothing,
+        );
 
         const bob = Math.abs(Math.sin(phase)) * 0.045 * motionBlendRef.current;
         const sway =
@@ -215,8 +184,17 @@ export default function ToonMarcherModel({
                 motionBlendRef.current,
             smoothing,
         );
-        distantEquipment.rotation.z = equipment.rotation.z;
-    }, -1);
+
+        detailFrameRef.current += 1;
+        if (detailFrameRef.current % 12 === 0) {
+            root.getWorldPosition(worldPositionRef.current);
+            const showDetail =
+                camera.position.distanceTo(worldPositionRef.current) <
+                detailDistance;
+            if (detailedRef.current) detailedRef.current.visible = showDetail;
+            if (distantRef.current) distantRef.current.visible = !showDetail;
+        }
+    });
 
     return (
         <group>
@@ -236,7 +214,7 @@ export default function ToonMarcherModel({
             </mesh>
 
             <group ref={rootRef} scale={[1, variation.height, 1]}>
-                <group ref={distantRef}>
+                <group ref={distantRef} visible={false}>
                     <mesh position={[0, 1.23, 0]}>
                         <capsuleGeometry args={[0.34, 1.35, 3, 6]} />
                         <meshToonMaterial color={color} />
@@ -277,48 +255,31 @@ export default function ToonMarcherModel({
                             />
                         </mesh>
                     )}
-                    <group ref={distantEquipmentRef}>
-                        <SimplifiedMarcherEquipment
-                            kind={instrument.kind}
-                            finish={instrumentFinish}
-                            accentColor={equipmentAccentColor}
-                        />
-                    </group>
                 </group>
 
-                <group ref={detailedRef} visible={false}>
-                    <group ref={lowerBodyRef}>
-                        <group ref={leftLegRef} position={[-0.2, 0.88, 0]}>
-                            <mesh position={[0, -0.38, 0]}>
-                                <cylinderGeometry
-                                    args={[0.13, 0.15, 0.76, 6]}
-                                />
-                                <meshToonMaterial color={pantsColor} />
-                            </mesh>
-                            <mesh position={[0, -0.78, 0.09]}>
-                                <boxGeometry args={[0.28, 0.16, 0.48]} />
-                                <meshToonMaterial
-                                    color={STORYBOOK_THEME.shoe}
-                                />
-                            </mesh>
-                        </group>
-                        <group ref={rightLegRef} position={[0.2, 0.88, 0]}>
-                            <mesh position={[0, -0.38, 0]}>
-                                <cylinderGeometry
-                                    args={[0.13, 0.15, 0.76, 6]}
-                                />
-                                <meshToonMaterial color={pantsColor} />
-                            </mesh>
-                            <mesh position={[0, -0.78, 0.09]}>
-                                <boxGeometry args={[0.28, 0.16, 0.48]} />
-                                <meshToonMaterial
-                                    color={STORYBOOK_THEME.shoe}
-                                />
-                            </mesh>
-                        </group>
+                <group ref={detailedRef}>
+                    <group ref={leftLegRef} position={[-0.2, 0.88, 0]}>
+                        <mesh position={[0, -0.38, 0]} castShadow>
+                            <cylinderGeometry args={[0.13, 0.15, 0.76, 6]} />
+                            <meshToonMaterial color={pantsColor} />
+                        </mesh>
+                        <mesh position={[0, -0.78, 0.09]}>
+                            <boxGeometry args={[0.28, 0.16, 0.48]} />
+                            <meshToonMaterial color={STORYBOOK_THEME.shoe} />
+                        </mesh>
+                    </group>
+                    <group ref={rightLegRef} position={[0.2, 0.88, 0]}>
+                        <mesh position={[0, -0.38, 0]} castShadow>
+                            <cylinderGeometry args={[0.13, 0.15, 0.76, 6]} />
+                            <meshToonMaterial color={pantsColor} />
+                        </mesh>
+                        <mesh position={[0, -0.78, 0.09]}>
+                            <boxGeometry args={[0.28, 0.16, 0.48]} />
+                            <meshToonMaterial color={STORYBOOK_THEME.shoe} />
+                        </mesh>
                     </group>
 
-                    <mesh position={[0, 1.42, 0]}>
+                    <mesh position={[0, 1.42, 0]} castShadow>
                         <cylinderGeometry args={[0.34, 0.48, 1.12, 7]} />
                         <meshToonMaterial color={color} />
                     </mesh>
@@ -370,7 +331,7 @@ export default function ToonMarcherModel({
                             isSummer ? -0.18 : pose.leftArmZ,
                         ]}
                     >
-                        <mesh position={[0, -0.25, 0]}>
+                        <mesh position={[0, -0.25, 0]} castShadow>
                             <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
                             <meshToonMaterial
                                 color={isSummer ? variation.skin : color}
@@ -380,7 +341,7 @@ export default function ToonMarcherModel({
                             position={[0, -0.5, 0]}
                             rotation={[pose.leftForearmX, 0, 0]}
                         >
-                            <mesh position={[0, -0.25, 0]}>
+                            <mesh position={[0, -0.25, 0]} castShadow>
                                 <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
                                 <meshToonMaterial
                                     color={isSummer ? variation.skin : color}
@@ -401,7 +362,7 @@ export default function ToonMarcherModel({
                             isSummer ? 0.18 : pose.rightArmZ,
                         ]}
                     >
-                        <mesh position={[0, -0.25, 0]}>
+                        <mesh position={[0, -0.25, 0]} castShadow>
                             <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
                             <meshToonMaterial
                                 color={isSummer ? variation.skin : color}
@@ -411,7 +372,7 @@ export default function ToonMarcherModel({
                             position={[0, -0.5, 0]}
                             rotation={[pose.rightForearmX, 0, 0]}
                         >
-                            <mesh position={[0, -0.25, 0]}>
+                            <mesh position={[0, -0.25, 0]} castShadow>
                                 <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
                                 <meshToonMaterial
                                     color={isSummer ? variation.skin : color}
@@ -424,14 +385,14 @@ export default function ToonMarcherModel({
                         </group>
                     </group>
 
-                    <mesh position={[0, 2.22, 0]}>
+                    <mesh position={[0, 2.22, 0]} castShadow>
                         <sphereGeometry args={[0.4, 9, 7]} />
                         <meshToonMaterial color={variation.skin} />
                     </mesh>
 
                     {isClassic && (
                         <>
-                            <mesh position={[0, 2.55, -0.035]}>
+                            <mesh position={[0, 2.55, -0.035]} castShadow>
                                 <cylinderGeometry
                                     args={[0.33, 0.39, 0.62, 8]}
                                 />
@@ -462,6 +423,7 @@ export default function ToonMarcherModel({
                                             0,
                                         ]}
                                         scale={[1, 1.45, 0.72]}
+                                        castShadow
                                     >
                                         <icosahedronGeometry
                                             args={[index === 1 ? 0.2 : 0.17, 1]}
@@ -480,7 +442,7 @@ export default function ToonMarcherModel({
                     )}
                     {isModern && (
                         <>
-                            <mesh position={[0, 2.5, 0]}>
+                            <mesh position={[0, 2.5, 0]} castShadow>
                                 <sphereGeometry
                                     args={[0.4, 8, 6, 0, Math.PI * 2, 0, 1.7]}
                                 />
@@ -510,13 +472,13 @@ export default function ToonMarcherModel({
                             </mesh>
                         </>
                     )}
-                    <group ref={equipmentRef}>
-                        <MarcherEquipment
-                            kind={instrument.kind}
-                            finish={instrumentFinish}
-                            accentColor={equipmentAccentColor}
-                        />
-                    </group>
+                </group>
+                <group ref={equipmentRef}>
+                    <MarcherEquipment
+                        kind={instrument.kind}
+                        finish={instrumentFinish}
+                        accentColor={color}
+                    />
                 </group>
             </group>
         </group>

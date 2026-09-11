@@ -4,8 +4,6 @@ import {
     canvasCoordinatesToWorld,
     getCameraPresetConfiguration,
     getFieldWorldDimensions,
-    getLowerBodyFacingAngle,
-    getSynchronizedStride,
     hasWorldPositionChanged,
     rgbaStringToThreeColor,
 } from "../viewer3d.utils";
@@ -71,23 +69,5 @@ describe("3D viewer coordinate utilities", () => {
         expect(
             hasWorldPositionChanged({ x: 12, z: -8 }, { x: 12.1, z: -8 }),
         ).toBe(true);
-    });
-
-    it("turns the lower body into lateral travel", () => {
-        expect(getLowerBodyFacingAngle(1, 0, 0)).toBeCloseTo(Math.PI / 2);
-    });
-
-    it("keeps the lower body forward while marching backward", () => {
-        expect(getLowerBodyFacingAngle(0, -1, 0)).toBe(0);
-    });
-
-    it("calculates travel relative to the upper-body facing", () => {
-        expect(getLowerBodyFacingAngle(1, 0, Math.PI / 2)).toBeCloseTo(0);
-    });
-
-    it("uses one shared stride cycle for every moving marcher", () => {
-        const quarterCycleTime = Math.PI / 10.8;
-        expect(getSynchronizedStride(quarterCycleTime, 1)).toBeCloseTo(0.34);
-        expect(getSynchronizedStride(quarterCycleTime, 0)).toBe(0);
     });
 });

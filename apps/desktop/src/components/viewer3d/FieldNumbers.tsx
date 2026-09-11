@@ -79,15 +79,7 @@ export const getFieldNumberMarkers = (
     return markers;
 };
 
-function Digit({
-    value,
-    offset,
-    color,
-}: {
-    value: string;
-    offset: number;
-    color: string;
-}) {
+function Digit({ value, offset }: { value: string; offset: number }) {
     return (
         <group position={[offset, 0, 0]}>
             {(DIGIT_SEGMENTS[value] ?? []).map((segmentName) => {
@@ -95,7 +87,7 @@ function Digit({
                 return (
                     <mesh key={segmentName} position={segment.position}>
                         <boxGeometry args={segment.size} />
-                        <meshBasicMaterial color={color} />
+                        <meshBasicMaterial color={STORYBOOK_THEME.line} />
                     </mesh>
                 );
             })}
@@ -103,13 +95,7 @@ function Digit({
     );
 }
 
-function FieldNumber({
-    marker,
-    color,
-}: {
-    marker: FieldNumberMarker;
-    color: string;
-}) {
+function FieldNumber({ marker }: { marker: FieldNumberMarker }) {
     const digits = marker.label.padStart(2, "0").split("");
     return (
         <group
@@ -117,23 +103,21 @@ function FieldNumber({
             rotation={[0, marker.rotation, 0]}
             scale={marker.scale}
         >
-            <Digit value={digits[0]} offset={-0.55} color={color} />
-            <Digit value={digits[1]} offset={0.55} color={color} />
+            <Digit value={digits[0]} offset={-0.55} />
+            <Digit value={digits[1]} offset={0.55} />
         </group>
     );
 }
 
 export default function FieldNumbers({
     fieldProperties,
-    color = STORYBOOK_THEME.line,
 }: {
     fieldProperties: FieldProperties;
-    color?: string;
 }) {
     return (
         <group>
             {getFieldNumberMarkers(fieldProperties).map((marker) => (
-                <FieldNumber key={marker.key} marker={marker} color={color} />
+                <FieldNumber key={marker.key} marker={marker} />
             ))}
         </group>
     );

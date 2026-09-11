@@ -5,15 +5,13 @@ import {
     canvasCoordinatesToWorld,
     getFieldWorldDimensions,
 } from "./viewer3d.utils";
-import { getFieldSceneTheme } from "./sceneTheme";
+import { STORYBOOK_THEME } from "./sceneTheme";
 import FieldNumbers from "./FieldNumbers";
-import type { FieldScene } from "./viewer3d.types";
 
 interface Field3DProps {
     fieldProperties: FieldProperties;
     showGrid: boolean;
     showHalfLines: boolean;
-    scene: FieldScene;
 }
 
 const addLine = (
@@ -36,9 +34,7 @@ export default function Field3D({
     fieldProperties,
     showGrid,
     showHalfLines,
-    scene,
 }: Field3DProps) {
-    const theme = getFieldSceneTheme(scene);
     const { width, depth } = getFieldWorldDimensions(fieldProperties);
     const stripeWidth = 8;
     const stripeCount = Math.ceil(width / stripeWidth);
@@ -160,7 +156,7 @@ export default function Field3D({
         <group>
             <mesh position={[0, -0.13, 0]} receiveShadow>
                 <boxGeometry args={[width, 0.24, depth]} />
-                <meshToonMaterial color={theme.grassDark} />
+                <meshToonMaterial color={STORYBOOK_THEME.grassDark} />
             </mesh>
             {Array.from({ length: stripeCount }, (_, index) => {
                 const currentWidth = Math.min(
@@ -180,7 +176,9 @@ export default function Field3D({
                         <boxGeometry args={[currentWidth, 0.02, depth]} />
                         <meshToonMaterial
                             color={
-                                index % 2 ? theme.grassLight : theme.grassDark
+                                index % 2
+                                    ? STORYBOOK_THEME.grassLight
+                                    : STORYBOOK_THEME.grassDark
                             }
                         />
                     </mesh>
@@ -189,7 +187,7 @@ export default function Field3D({
             {showGrid && (
                 <lineSegments geometry={minorGridGeometry}>
                     <lineBasicMaterial
-                        color={scene === "night" ? "#497064" : "#78947d"}
+                        color="#78947d"
                         transparent
                         opacity={0.34}
                     />
@@ -198,19 +196,16 @@ export default function Field3D({
             {showHalfLines && (
                 <lineSegments geometry={halfLineGeometry}>
                     <lineBasicMaterial
-                        color={scene === "night" ? "#9bb6ad" : "#b5c8b6"}
+                        color="#b5c8b6"
                         transparent
                         opacity={0.58}
                     />
                 </lineSegments>
             )}
             <lineSegments geometry={checkpointGeometry}>
-                <lineBasicMaterial color={theme.line} />
+                <lineBasicMaterial color={STORYBOOK_THEME.line} />
             </lineSegments>
-            <FieldNumbers
-                fieldProperties={fieldProperties}
-                color={theme.line}
-            />
+            <FieldNumbers fieldProperties={fieldProperties} />
         </group>
     );
 }

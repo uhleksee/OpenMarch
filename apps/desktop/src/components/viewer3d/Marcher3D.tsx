@@ -5,7 +5,6 @@ import type { InstrumentFinish, UniformStyle } from "./viewer3d.types";
 
 export interface MarcherModelProps {
     color: string;
-    equipmentAccentColor: string;
     variantSeed: number;
     section: string;
     uniformStyle: UniformStyle;
@@ -16,7 +15,6 @@ export interface MarcherModelProps {
 
 export interface MarcherMotionRef {
     current: boolean;
-    lowerBodyAngle: number;
 }
 
 export type MarcherModelComponent = ComponentType<MarcherModelProps>;
@@ -26,7 +24,6 @@ interface Marcher3DProps {
     drillNumber: string;
     section: string;
     color: string;
-    equipmentAccentColor: string;
     labelVisible: boolean;
     uniformStyle: UniformStyle;
     instrumentFinish: InstrumentFinish;
@@ -40,7 +37,6 @@ function Marcher3D({
     drillNumber,
     section,
     color,
-    equipmentAccentColor,
     labelVisible,
     uniformStyle,
     instrumentFinish,
@@ -52,7 +48,6 @@ function Marcher3D({
         <group>
             <Model
                 color={color}
-                equipmentAccentColor={equipmentAccentColor}
                 variantSeed={marcherId}
                 section={section}
                 uniformStyle={uniformStyle}

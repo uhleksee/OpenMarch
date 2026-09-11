@@ -31,6 +31,7 @@ export type MarcherPose =
 export interface InstrumentDefinition {
     kind: InstrumentKind;
     pose: MarcherPose;
+    strideScale: number;
     bodySway: number;
     equipmentSway: number;
 }
@@ -126,6 +127,7 @@ export const getInstrumentDefinition = (
         return {
             kind,
             pose: "woodwind",
+            strideScale: 0.82,
             bodySway: 0.018,
             equipmentSway: 0.012,
         };
@@ -134,6 +136,7 @@ export const getInstrumentDefinition = (
         return {
             kind,
             pose: "horn",
+            strideScale: 0.78,
             bodySway: 0.014,
             equipmentSway: 0.008,
         };
@@ -142,6 +145,7 @@ export const getInstrumentDefinition = (
         return {
             kind,
             pose: "battery",
+            strideScale: 0.68,
             bodySway: 0.01,
             equipmentSway: 0.005,
         };
@@ -150,6 +154,7 @@ export const getInstrumentDefinition = (
         return {
             kind,
             pose: "guard",
+            strideScale: 1.05,
             bodySway: 0.045,
             equipmentSway: 0.07,
         };
@@ -158,6 +163,7 @@ export const getInstrumentDefinition = (
         return {
             kind,
             pose: "keyboard",
+            strideScale: 0.2,
             bodySway: 0.005,
             equipmentSway: 0,
         };
@@ -166,6 +172,7 @@ export const getInstrumentDefinition = (
     return {
         kind,
         pose: "free",
+        strideScale: 1,
         bodySway: 0.03,
         equipmentSway: 0,
     };
