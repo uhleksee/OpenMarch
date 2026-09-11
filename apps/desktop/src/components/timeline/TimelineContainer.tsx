@@ -23,57 +23,125 @@ import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 export default function TimelineContainer() {
     const { isPlaying } = useIsPlaying()!;
-    const { measures } = useTimingObjects()!;
+    const { measures, pages } = useTimingObjects()!;
     const { selectedPage } = useSelectedPage()!;
-    const playbackPageId = usePlaybackPageStore(
-        (state) => state.playbackPageId,
-    );
     const { uiSettings } = useUiSettingsStore();
     const { isFullscreen } = useFullscreenStore();
     const timelineRef = useRef<HTMLDivElement>(null);
-    const activePageId =
-        isPlaying && playbackPageId !== null
-            ? playbackPageId
-            : selectedPage?.id;
 
     useEffect(() => {
-        if (activePageId == null) return;
+        if (isPlaying || !selectedPage) return;
 
         const container = timelineRef.current;
         const selectedPageElement = document.querySelector(
-            `[timeline-page-id="${activePageId}"]`,
+            `[timeline-page-id="${selectedPage.id}"]`,
         );
 
         if (!container || !selectedPageElement) return;
 
-        if (isPlaying) {
-            // During playback: Linear scroll animation
-            container.style.scrollBehavior = "auto";
-            const containerRect = container.getBoundingClientRect();
-            const elementRect = selectedPageElement.getBoundingClientRect();
-
-            const targetScroll =
-                elementRect.left +
-                container.scrollLeft -
-                containerRect.left -
-                (containerRect.width - elementRect.width) / 2;
-
-            // Set the scroll directly without transition (animation handled by CSS)
-            container.scrollLeft = targetScroll;
-        } else {
-            // Manual selection: Smooth scroll
-            container.style.scrollBehavior = "smooth";
-            selectedPageElement.scrollIntoView({
-                block: "nearest",
-                inline: "center",
-            });
-        }
+        container.style.scrollBehavior = "smooth";
+        selectedPageElement.scrollIntoView({
+            block: "nearest",
+            inline: "center",
+        });
 
         return () => {
             container.style.scrollBehavior = "smooth";
             container.style.transition = "";
         };
-    }, [activePageId, isPlaying]);
+    }, [selectedPage, isPlaying]);
+
+    useEffect(() => {
+        if (!isPlaying) return;
+
+        let updateFrame = 0;
+
+        const clearPlaybackDecorations = () => {
+            const highlighted = document.querySelector(
+                '[data-playback-active="true"]',
+            );
+            if (highlighted instanceof HTMLElement) {
+                highlighted.dataset.playbackActive = "false";
+                highlighted.classList.remove("border-accent");
+                highlighted.classList.add("border-stroke");
+            }
+
+            const progress = document.querySelector(
+                '[data-playback-progress-active="true"]',
+            );
+            if (progress instanceof HTMLElement) {
+                progress.dataset.playbackProgressActive = "false";
+                progress.classList.add("hidden");
+                progress.style.animation = "none";
+            }
+        };
+
+        const showPlaybackPage = (pageId: number | null) => {
+            clearPlaybackDecorations();
+            if (pageId == null) return;
+
+            const pageContainer = document.querySelector(
+                `[timeline-page-id="${pageId}"]`,
+            );
+            const highlight = pageContainer?.matches("[data-page-highlight]")
+                ? pageContainer
+                : pageContainer?.querySelector("[data-page-highlight]");
+            if (highlight instanceof HTMLElement) {
+                highlight.dataset.playbackActive = "true";
+                highlight.classList.remove("border-stroke");
+                highlight.classList.add("border-accent");
+            }
+
+            const pageIndex = pages.findIndex((page) => page.id === pageId);
+            const destinationPage = pages[pageIndex + 1];
+            if (destinationPage) {
+                const destinationContainer = document.querySelector(
+                    `[timeline-page-id="${destinationPage.id}"]`,
+                );
+                const progress = destinationContainer?.querySelector(
+                    "[data-playback-progress]",
+                );
+                if (progress instanceof HTMLElement) {
+                    progress.dataset.playbackProgressActive = "true";
+                    progress.classList.remove("hidden");
+                    progress.style.animation = "none";
+                    void progress.offsetWidth;
+                    progress.style.animation = `progress ${destinationPage.duration}s linear forwards`;
+                }
+            }
+
+            const timeline = timelineRef.current;
+            if (!timeline || !(pageContainer instanceof HTMLElement)) return;
+            timeline.style.scrollBehavior = "auto";
+            const timelineRect = timeline.getBoundingClientRect();
+            const pageRect = pageContainer.getBoundingClientRect();
+            timeline.scrollLeft =
+                pageRect.left +
+                timeline.scrollLeft -
+                timelineRect.left -
+                (timelineRect.width - pageRect.width) / 2;
+        };
+
+        const schedulePlaybackPage = (pageId: number | null) => {
+            cancelAnimationFrame(updateFrame);
+            updateFrame = requestAnimationFrame(() => showPlaybackPage(pageId));
+        };
+
+        const unsubscribe = usePlaybackPageStore.subscribe(
+            (state, previousState) => {
+                if (state.playbackPageId !== previousState.playbackPageId) {
+                    schedulePlaybackPage(state.playbackPageId);
+                }
+            },
+        );
+        schedulePlaybackPage(usePlaybackPageStore.getState().playbackPageId);
+
+        return () => {
+            unsubscribe();
+            cancelAnimationFrame(updateFrame);
+            clearPlaybackDecorations();
+        };
+    }, [isPlaying, pages]);
 
     // Rerender the timeline when the measures or pages change
     useEffect(() => {

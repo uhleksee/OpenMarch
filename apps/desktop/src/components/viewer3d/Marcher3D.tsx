@@ -2,12 +2,14 @@ import { ComponentType, memo } from "react";
 import { Html } from "@react-three/drei";
 import ToonMarcherModel from "./ToonMarcherModel";
 import type { UniformStyle } from "./viewer3d.types";
+import { getInstrumentPose, type InstrumentPose } from "./marcherPose";
 
 export interface MarcherModelProps {
     color: string;
     variantSeed: number;
     uniformStyle: UniformStyle;
     motionRef: MarcherMotionRef;
+    instrumentPose: InstrumentPose;
 }
 
 export interface MarcherMotionRef {
@@ -20,6 +22,7 @@ export type MarcherModelComponent = ComponentType<MarcherModelProps>;
 interface Marcher3DProps {
     marcherId: number;
     drillNumber: string;
+    section: string;
     color: string;
     labelVisible: boolean;
     uniformStyle: UniformStyle;
@@ -30,6 +33,7 @@ interface Marcher3DProps {
 function Marcher3D({
     marcherId,
     drillNumber,
+    section,
     color,
     labelVisible,
     uniformStyle,
@@ -43,6 +47,7 @@ function Marcher3D({
                 variantSeed={marcherId}
                 uniformStyle={uniformStyle}
                 motionRef={motionRef}
+                instrumentPose={getInstrumentPose(section)}
             />
             {labelVisible && (
                 <Html

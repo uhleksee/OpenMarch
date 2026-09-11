@@ -25,7 +25,6 @@ import {
     useCreateLastPageOnTimeline,
 } from "./PageTimeline.utils";
 import { workspaceSettingsQueryOptions } from "@/hooks/queries/useWorkspaceSettings";
-import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 // eslint-disable-next-line max-lines-per-function
 export default function PageTimeline() {
@@ -33,9 +32,6 @@ export default function PageTimeline() {
     const { uiSettings } = useUiSettingsStore();
     const { isPlaying } = useIsPlaying()!;
     const { selectedPage, setSelectedPage } = useSelectedPage()!;
-    const playbackPageId = usePlaybackPageStore(
-        (state) => state.playbackPageId,
-    );
     const { setSelectedShapePageIds } = useSelectionStore()!;
     const { isFullscreen } = useFullscreenStore();
     const { pages, beats } = useTimingObjects()!;
@@ -66,11 +62,6 @@ export default function PageTimeline() {
         workspaceSettingsQueryOptions(),
     );
     const { t } = useTolgee();
-    const activePageId =
-        isPlaying && playbackPageId !== null
-            ? playbackPageId
-            : selectedPage?.id;
-    const activePageIndex = pages.findIndex((page) => page.id === activePageId);
 
     // Calculate the width of a page based on its duration
     // Add a small buffer to ensure the page visually includes all its beats
@@ -291,12 +282,8 @@ export default function PageTimeline() {
                         className={clsx(
                             "rounded-l-6 bg-fg-2 flex h-full w-[40px] items-center justify-center border px-10 py-4 font-mono",
                             !isPlaying && "cursor-pointer",
-                            pages[0].id === activePageId
-                                ? [
-                                      "border-accent",
-                                      isPlaying &&
-                                          "text-text/75 pointer-events-none",
-                                  ]
+                            !isPlaying && pages[0].id === selectedPage?.id
+                                ? ["border-accent"]
                                 : [
                                       "border-stroke",
                                       isPlaying &&
@@ -310,6 +297,7 @@ export default function PageTimeline() {
                         title={t("timeline.page.firstPage")}
                         aria-label={t("timeline.page.firstPage")}
                         timeline-page-id={pages[0].id}
+                        data-page-highlight
                     >
                         <div>{pages[0].name}</div>
                     </li>
@@ -339,12 +327,9 @@ export default function PageTimeline() {
                                         className={clsx(
                                             "bg-fg-2 text-body text-text group-last:rounded-r-6 relative flex h-full items-center justify-end overflow-clip border px-8 py-4 font-mono",
                                             !isPlaying && "cursor-pointer",
-                                            page.id === activePageId
-                                                ? [
-                                                      "border-accent",
-                                                      isPlaying &&
-                                                          "text-text/75 pointer-events-none",
-                                                  ]
+                                            !isPlaying &&
+                                                page.id === selectedPage?.id
+                                                ? ["border-accent"]
                                                 : [
                                                       "border-stroke",
                                                       isPlaying &&
@@ -356,27 +341,16 @@ export default function PageTimeline() {
                                                 setSelectedPage(page);
                                             setSelectedShapePageIds([]);
                                         }}
+                                        data-page-highlight
                                     >
                                         <div className="rig static z-10">
                                             {page.name}
                                         </div>
                                         {/* ------ progress bar (fullscreen) ------ */}
-                                        {(activePageIndex === index - 1 ||
-                                            (activePageIndex === 0 &&
-                                                index === pages.length)) &&
-                                            isPlaying && (
-                                                <div
-                                                    className={clsx(
-                                                        "absolute top-0 left-0 z-0 h-full w-full",
-                                                        !isFullscreen
-                                                            ? "bg-accent/25"
-                                                            : "bg-accent/25",
-                                                    )}
-                                                    style={{
-                                                        animation: `progress ${page.duration}s linear forwards`,
-                                                    }}
-                                                />
-                                            )}
+                                        <div
+                                            data-playback-progress
+                                            className="bg-accent/25 absolute top-0 left-0 z-0 hidden h-full w-full"
+                                        />
                                     </div>
                                     {/* ------ page resize dragging ------ */}
                                     {!isFullscreen && (

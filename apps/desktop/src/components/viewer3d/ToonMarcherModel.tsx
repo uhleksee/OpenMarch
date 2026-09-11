@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import { SKIN_TONES, STORYBOOK_THEME } from "./sceneTheme";
 import type { MarcherModelProps } from "./Marcher3D";
+import type { InstrumentPose } from "./marcherPose";
 
 const CONTACT_SHADOW_GEOMETRY = new THREE.CircleGeometry(0.82, 24);
 const CONTACT_SHADOW_MATERIAL = new THREE.ShaderMaterial({
@@ -36,11 +37,93 @@ const getVariation = (seed: number) => {
     };
 };
 
+interface ArmPoseDefinition {
+    leftShoulder: [number, number, number];
+    rightShoulder: [number, number, number];
+    leftElbow: [number, number, number];
+    rightElbow: [number, number, number];
+    marchSwing: number;
+}
+
+const ARM_POSES: Record<InstrumentPose, ArmPoseDefinition> = {
+    natural: {
+        leftShoulder: [0, 0, -0.12],
+        rightShoulder: [0, 0, 0.12],
+        leftElbow: [0, 0, 0],
+        rightElbow: [0, 0, 0],
+        marchSwing: 0.72,
+    },
+    highBrass: {
+        leftShoulder: [-1.08, -0.08, -0.3],
+        rightShoulder: [-1.08, 0.08, 0.3],
+        leftElbow: [-1.05, 0, 0.08],
+        rightElbow: [-1.05, 0, -0.08],
+        marchSwing: 0.025,
+    },
+    trombone: {
+        leftShoulder: [-1.08, -0.05, -0.24],
+        rightShoulder: [-1.42, 0.02, 0.18],
+        leftElbow: [-1.04, 0, 0.08],
+        rightElbow: [-0.08, 0, 0],
+        marchSwing: 0.02,
+    },
+    lowBrass: {
+        leftShoulder: [-0.92, -0.06, -0.24],
+        rightShoulder: [-0.92, 0.06, 0.24],
+        leftElbow: [-0.88, 0, 0.08],
+        rightElbow: [-0.88, 0, -0.08],
+        marchSwing: 0.025,
+    },
+    tuba: {
+        leftShoulder: [-0.72, -0.18, -0.42],
+        rightShoulder: [-0.62, 0.12, 0.28],
+        leftElbow: [-1.15, 0, 0.18],
+        rightElbow: [-0.92, 0, -0.1],
+        marchSwing: 0.02,
+    },
+    flute: {
+        leftShoulder: [-0.88, -0.58, -0.5],
+        rightShoulder: [-0.84, -0.58, 0.42],
+        leftElbow: [-0.72, 0, 0.12],
+        rightElbow: [-0.72, 0, -0.12],
+        marchSwing: 0.02,
+    },
+    reed: {
+        leftShoulder: [-0.7, -0.08, -0.2],
+        rightShoulder: [-0.7, 0.08, 0.2],
+        leftElbow: [-0.62, 0, 0.06],
+        rightElbow: [-0.62, 0, -0.06],
+        marchSwing: 0.025,
+    },
+    battery: {
+        leftShoulder: [-0.5, -0.05, -0.2],
+        rightShoulder: [-0.5, 0.05, 0.2],
+        leftElbow: [-0.48, 0, 0.06],
+        rightElbow: [-0.48, 0, -0.06],
+        marchSwing: 0.03,
+    },
+    cymbals: {
+        leftShoulder: [-1.12, -0.08, -0.42],
+        rightShoulder: [-1.12, 0.08, 0.42],
+        leftElbow: [-0.16, 0, 0],
+        rightElbow: [-0.16, 0, 0],
+        marchSwing: 0.02,
+    },
+    conducting: {
+        leftShoulder: [-0.78, -0.05, -0.5],
+        rightShoulder: [-0.78, 0.05, 0.5],
+        leftElbow: [-0.36, 0, 0.08],
+        rightElbow: [-0.36, 0, -0.08],
+        marchSwing: 0.04,
+    },
+};
+
 export default function ToonMarcherModel({
     color,
     variantSeed,
     uniformStyle,
     motionRef,
+    instrumentPose,
 }: MarcherModelProps) {
     const rootRef = useRef<THREE.Group>(null);
     const lowerBodyRef = useRef<THREE.Group>(null);
@@ -55,6 +138,7 @@ export default function ToonMarcherModel({
     const isModern = uniformStyle === "modern";
     const isSummer = uniformStyle === "summer";
     const pantsColor = isSummer ? color : STORYBOOK_THEME.uniformDark;
+    const armPose = ARM_POSES[instrumentPose];
 
     useFrame(({ clock }, delta) => {
         const root = rootRef.current;
@@ -83,15 +167,15 @@ export default function ToonMarcherModel({
         const phase = clock.elapsedTime * 5.4;
         const stride = Math.sin(phase) * 0.34 * motionBlendRef.current;
 
-        const armSwing = 0.72;
+        const armSwing = armPose.marchSwing;
         leftArm.rotation.x = THREE.MathUtils.lerp(
             leftArm.rotation.x,
-            -stride * armSwing,
+            armPose.leftShoulder[0] - stride * armSwing,
             smoothing,
         );
         rightArm.rotation.x = THREE.MathUtils.lerp(
             rightArm.rotation.x,
-            stride * armSwing,
+            armPose.rightShoulder[0] + stride * armSwing,
             smoothing,
         );
         leftLeg.rotation.x = THREE.MathUtils.lerp(
@@ -199,7 +283,11 @@ export default function ToonMarcherModel({
                 <group
                     ref={leftArmRef}
                     position={[-0.44, 1.88, 0]}
-                    rotation={[0, 0, isSummer ? -0.18 : -0.12]}
+                    rotation={[
+                        armPose.leftShoulder[0],
+                        armPose.leftShoulder[1],
+                        armPose.leftShoulder[2] + (isSummer ? -0.06 : 0),
+                    ]}
                 >
                     <mesh position={[0, -0.25, 0]}>
                         <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
@@ -207,7 +295,7 @@ export default function ToonMarcherModel({
                             color={isSummer ? variation.skin : color}
                         />
                     </mesh>
-                    <group position={[0, -0.5, 0]}>
+                    <group position={[0, -0.5, 0]} rotation={armPose.leftElbow}>
                         <mesh position={[0, -0.25, 0]}>
                             <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
                             <meshToonMaterial
@@ -223,7 +311,11 @@ export default function ToonMarcherModel({
                 <group
                     ref={rightArmRef}
                     position={[0.44, 1.88, 0]}
-                    rotation={[0, 0, isSummer ? 0.18 : 0.12]}
+                    rotation={[
+                        armPose.rightShoulder[0],
+                        armPose.rightShoulder[1],
+                        armPose.rightShoulder[2] + (isSummer ? 0.06 : 0),
+                    ]}
                 >
                     <mesh position={[0, -0.25, 0]}>
                         <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
@@ -231,7 +323,10 @@ export default function ToonMarcherModel({
                             color={isSummer ? variation.skin : color}
                         />
                     </mesh>
-                    <group position={[0, -0.5, 0]}>
+                    <group
+                        position={[0, -0.5, 0]}
+                        rotation={armPose.rightElbow}
+                    >
                         <mesh position={[0, -0.25, 0]}>
                             <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
                             <meshToonMaterial

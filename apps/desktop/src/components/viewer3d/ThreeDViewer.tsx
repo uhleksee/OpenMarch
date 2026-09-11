@@ -21,6 +21,7 @@ import {
     allMarchersQueryOptions,
     fieldPropertiesQueryOptions,
     marcherAppearancesQueryOptions,
+    marcherPageKeys,
     marcherPagesByPageQueryOptions,
 } from "@/hooks/queries";
 import { useManyCoordinateData } from "@/hooks/queries/useCoordinateData";
@@ -358,6 +359,7 @@ function MarcherFormation({
     const marcherRefs = useRef(new Map<number, MarcherGroupRef>());
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
     const { isPlaying } = useIsPlaying()!;
+    const queryClient = useQueryClient();
 
     const setPausedPositions = useCallback(() => {
         for (const marcher of marchers) {
@@ -389,6 +391,34 @@ function MarcherFormation({
             );
         }
     }, [marcherPages, marchers]);
+
+    useEffect(
+        () =>
+            usePlaybackPageStore.subscribe((state, previousState) => {
+                if (
+                    state.playbackPageId === previousState.playbackPageId ||
+                    state.playbackPageId == null
+                )
+                    return;
+
+                const playbackMarcherPages = queryClient.getQueryData<
+                    Record<number, MarcherPage>
+                >(marcherPageKeys.byPage(state.playbackPageId));
+                if (!playbackMarcherPages) return;
+
+                for (const marcher of marchers) {
+                    const marcherPage = playbackMarcherPages[marcher.id];
+                    const marcherGroup = marcherRefs.current.get(
+                        marcher.id,
+                    )?.current;
+                    if (!marcherPage || !marcherGroup) continue;
+                    marcherGroup.rotation.y = THREE.MathUtils.degToRad(
+                        -marcherPage.rotation_degrees,
+                    );
+                }
+            }),
+        [marchers, queryClient],
+    );
 
     useFrame(() => {
         if (!isPlaying) return;
@@ -461,6 +491,7 @@ function MarcherFormation({
                         <Marcher3D
                             marcherId={marcher.id}
                             drillNumber={marcher.drill_number}
+                            section={marcher.section}
                             color={
                                 uniformColorMode === "override"
                                     ? uniformColor
@@ -485,10 +516,6 @@ export default function ThreeDViewer() {
     const databaseReady = useDatabaseReady();
     const queryClient = useQueryClient();
     const { selectedPage } = useSelectedPage()!;
-    const { isPlaying } = useIsPlaying()!;
-    const playbackPageId = usePlaybackPageStore(
-        (state) => state.playbackPageId,
-    );
     const { pages } = useTimingObjects();
     const { uiSettings } = useUiSettingsStore();
     const diagnosticsEnabled = usePerformanceDiagnosticsStore(
@@ -497,20 +524,16 @@ export default function ThreeDViewer() {
     const diagnosticSceneMode = usePerformanceDiagnosticsStore(
         (state) => state.sceneMode,
     );
-    const activePageId =
-        isPlaying && playbackPageId !== null
-            ? playbackPageId
-            : selectedPage?.id;
     const { data: fieldProperties } = useQuery(
         fieldPropertiesQueryOptions(databaseReady),
     );
     const { data: marchers = [] } = useQuery(allMarchersQueryOptions());
     const { data: marcherPages = {} } = useQuery({
-        ...marcherPagesByPageQueryOptions(activePageId),
+        ...marcherPagesByPageQueryOptions(selectedPage?.id),
         placeholderData: keepPreviousData,
     });
     const { data: marcherAppearances = {} } = useQuery({
-        ...marcherAppearancesQueryOptions(activePageId, queryClient),
+        ...marcherAppearancesQueryOptions(selectedPage?.id, queryClient),
         placeholderData: keepPreviousData,
     });
     const { data: marcherTimelines } = useManyCoordinateData(pages);

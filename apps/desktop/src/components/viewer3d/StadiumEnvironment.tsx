@@ -162,7 +162,7 @@ function Bleachers({
     );
 }
 
-function LightPole({
+function StadiumLightTower({
     position,
     height,
     face,
@@ -173,31 +173,102 @@ function LightPole({
     face: 1 | -1;
     lightingMode: LightingMode;
 }) {
+    const panelWidth = 7.8;
+    const panelHeight = 3.2;
+    const towerGeometry = useMemo(() => {
+        const geometries: THREE.BufferGeometry[] = [];
+        const addBeam = (
+            size: [number, number, number],
+            beamPosition: [number, number, number],
+            rotationZ = 0,
+        ) => {
+            const geometry = new THREE.BoxGeometry(...size);
+            geometry.rotateZ(rotationZ);
+            geometry.translate(...beamPosition);
+            geometries.push(geometry);
+        };
+
+        const towerWidth = 1.25;
+        addBeam([0.18, height, 0.18], [-towerWidth / 2, height / 2, 0]);
+        addBeam([0.18, height, 0.18], [towerWidth / 2, height / 2, 0]);
+        for (let level = 1; level < 7; level += 1) {
+            const bottom = ((level - 1) / 7) * height;
+            const top = (level / 7) * height;
+            const middle = (bottom + top) / 2;
+            const segmentHeight = top - bottom;
+            const diagonalLength = Math.hypot(towerWidth, segmentHeight);
+            const diagonalAngle = Math.atan2(towerWidth, segmentHeight);
+            addBeam([towerWidth + 0.22, 0.12, 0.14], [0, top, 0]);
+            addBeam(
+                [0.11, diagonalLength, 0.11],
+                [0, middle, 0],
+                level % 2 ? diagonalAngle : -diagonalAngle,
+            );
+        }
+        addBeam([panelWidth + 0.8, 0.24, 0.3], [0, height, 0]);
+
+        const merged = mergeGeometries(geometries, false);
+        geometries.forEach((geometry) => geometry.dispose());
+        return merged ?? new THREE.BufferGeometry();
+    }, [height]);
+    const floodlightGeometry = useMemo(() => {
+        const geometries: THREE.BufferGeometry[] = [];
+        for (let row = 0; row < 3; row += 1) {
+            for (let column = 0; column < 5; column += 1) {
+                const geometry = new THREE.BoxGeometry(1.12, 0.72, 0.12);
+                geometry.translate(
+                    (column - 2) * 1.42,
+                    (row - 1) * 0.92,
+                    face * 0.3,
+                );
+                geometries.push(geometry);
+            }
+        }
+        const merged = mergeGeometries(geometries, false);
+        geometries.forEach((geometry) => geometry.dispose());
+        return merged ?? new THREE.BufferGeometry();
+    }, [face]);
+
+    useEffect(() => {
+        return () => {
+            towerGeometry.dispose();
+            floodlightGeometry.dispose();
+        };
+    }, [floodlightGeometry, towerGeometry]);
+
     return (
         <group position={position}>
-            <mesh position={[0, height / 2, 0]} castShadow>
-                <cylinderGeometry args={[0.12, 0.2, height, 8]} />
+            <mesh geometry={towerGeometry} castShadow>
                 <meshToonMaterial color={STORYBOOK_THEME.pole} />
             </mesh>
             <mesh
-                position={[0, height, face * 0.42]}
-                rotation={[0.2 * face, 0, 0]}
+                position={[0, height + 0.15, 0]}
+                rotation={[0.12 * face, 0, 0]}
                 castShadow
             >
-                <boxGeometry args={[3.2, 0.68, 0.32]} />
+                <boxGeometry args={[panelWidth, panelHeight, 0.38]} />
+                <meshToonMaterial color={STORYBOOK_THEME.pole} />
+            </mesh>
+            <mesh
+                geometry={floodlightGeometry}
+                position={[0, height + 0.15, 0]}
+                rotation={[0.12 * face, 0, 0]}
+            >
                 <meshToonMaterial
                     color={STORYBOOK_THEME.uniformLight}
                     emissive={lightingMode === "night" ? "#dff2ff" : "#000000"}
-                    emissiveIntensity={lightingMode === "night" ? 2.6 : 0}
+                    emissiveIntensity={lightingMode === "night" ? 4.2 : 0}
                 />
             </mesh>
             {lightingMode === "night" && (
-                <pointLight
-                    position={[0, height - 0.4, face * 0.5]}
+                <spotLight
+                    position={[0, height + 0.2, face * 0.8]}
                     color="#d9ecff"
-                    intensity={160}
-                    distance={height * 5.5}
-                    decay={1.5}
+                    intensity={420}
+                    distance={height * 6}
+                    decay={1.35}
+                    angle={0.62}
+                    penumbra={0.72}
                 />
             )}
         </group>
@@ -265,14 +336,14 @@ export default function StadiumEnvironment({
 
             {[-0.43, 0.43].flatMap((xFactor) =>
                 ([-1, 1] as const).map((zFactor) => (
-                    <LightPole
+                    <StadiumLightTower
                         key={`${xFactor}-${zFactor}`}
                         position={[
                             fieldWidth * xFactor,
                             0,
                             zFactor * (fieldDepth / 2 + 7),
                         ]}
-                        height={largestDimension * 0.13}
+                        height={largestDimension * 0.2}
                         face={zFactor === 1 ? -1 : 1}
                         lightingMode={lightingMode}
                     />
