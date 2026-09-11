@@ -19,7 +19,14 @@ export default function LightingRig({
         gl.outputColorSpace = THREE.SRGBColorSpace;
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = STORYBOOK_RENDERING.exposure;
+        // Only the stationary stadium casts real shadows. Marchers use the
+        // inexpensive soft blob beneath each model, so this map can stay still.
+        gl.shadowMap.autoUpdate = false;
+        gl.shadowMap.needsUpdate = true;
         scene.background = new THREE.Color(STORYBOOK_THEME.skyHorizon);
+        return () => {
+            gl.shadowMap.autoUpdate = true;
+        };
     }, [gl, scene]);
 
     return (

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import Canvas from "@/components/canvas/Canvas";
 import CanvasZoomControls from "@/components/canvas/CanvasZoomControls";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
@@ -10,19 +10,47 @@ export type FieldViewMode = "2d" | "3d";
 
 interface FieldViewProps {
     canvas?: OpenMarchCanvas;
-    onCanvasReady: (canvas: OpenMarchCanvas) => void;
+    onCanvasReady: (canvas: OpenMarchCanvas | undefined) => void;
 }
 
 export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
     const [viewMode, setViewMode] = useState<FieldViewMode>("2d");
 
+    useEffect(() => {
+        if (viewMode !== "3d") return;
+
+        const blockEditorShortcuts = (event: KeyboardEvent) => {
+            if (
+                document.activeElement?.matches(
+                    "input, textarea, select, [contenteditable]",
+                )
+            )
+                return;
+
+            const hasCommandModifier =
+                event.metaKey || event.ctrlKey || event.altKey;
+            const isPlayback = event.code === "Space" && !hasCommandModifier;
+            const isPageNavigation =
+                (event.code === "KeyQ" || event.code === "KeyE") &&
+                !hasCommandModifier;
+
+            if (isPlayback || isPageNavigation) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        };
+
+        window.addEventListener("keydown", blockEditorShortcuts, true);
+        return () => {
+            window.removeEventListener("keydown", blockEditorShortcuts, true);
+        };
+    }, [viewMode]);
+
     return (
         <div className="relative flex h-full min-h-0 min-w-0 flex-1">
-            <Canvas
-                className={clsx({ hidden: viewMode === "3d" })}
-                active={viewMode === "2d"}
-                onCanvasReady={onCanvasReady}
-            />
+            {viewMode === "2d" && (
+                <Canvas active onCanvasReady={onCanvasReady} />
+            )}
             {viewMode === "3d" && (
                 <Suspense
                     fallback={
@@ -44,7 +72,10 @@ export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
                         key={mode}
                         type="button"
                         aria-pressed={viewMode === mode}
-                        onClick={() => setViewMode(mode)}
+                        onClick={() => {
+                            if (mode === "3d") onCanvasReady(undefined);
+                            setViewMode(mode);
+                        }}
                         className={clsx(
                             "rounded-6 min-w-48 px-10 py-6 text-sm font-semibold uppercase transition-colors",
                             viewMode === mode

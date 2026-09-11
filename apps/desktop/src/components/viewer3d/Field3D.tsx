@@ -30,6 +30,59 @@ const addLine = (
 const createLineGeometry = (points: THREE.Vector3[]) =>
     new THREE.BufferGeometry().setFromPoints(points);
 
+const createStripedFieldGeometry = (
+    width: number,
+    depth: number,
+    stripeWidth: number,
+) => {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const stripeCount = Math.ceil(width / stripeWidth);
+
+    for (let index = 0; index < stripeCount; index += 1) {
+        const x1 = -width / 2 + index * stripeWidth;
+        const x2 = Math.min(width / 2, x1 + stripeWidth);
+        const z1 = -depth / 2;
+        const z2 = depth / 2;
+        positions.push(
+            x1,
+            0,
+            z1,
+            x1,
+            0,
+            z2,
+            x2,
+            0,
+            z1,
+            x2,
+            0,
+            z1,
+            x1,
+            0,
+            z2,
+            x2,
+            0,
+            z2,
+        );
+        const color = new THREE.Color(
+            index % 2 ? STORYBOOK_THEME.grassLight : STORYBOOK_THEME.grassDark,
+        );
+        for (let vertex = 0; vertex < 6; vertex += 1) {
+            colors.push(color.r, color.g, color.b);
+        }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(positions, 3),
+    );
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    return geometry;
+};
+
 export default function Field3D({
     fieldProperties,
     showGrid,
@@ -37,7 +90,10 @@ export default function Field3D({
 }: Field3DProps) {
     const { width, depth } = getFieldWorldDimensions(fieldProperties);
     const stripeWidth = 8;
-    const stripeCount = Math.ceil(width / stripeWidth);
+    const stripedFieldGeometry = useMemo(
+        () => createStripedFieldGeometry(width, depth, stripeWidth),
+        [depth, width],
+    );
 
     const minorGridGeometry = useMemo(() => {
         const points: THREE.Vector3[] = [];
@@ -158,32 +214,9 @@ export default function Field3D({
                 <boxGeometry args={[width, 0.24, depth]} />
                 <meshToonMaterial color={STORYBOOK_THEME.grassDark} />
             </mesh>
-            {Array.from({ length: stripeCount }, (_, index) => {
-                const currentWidth = Math.min(
-                    stripeWidth,
-                    width - index * stripeWidth,
-                );
-                return (
-                    <mesh
-                        key={index}
-                        position={[
-                            -width / 2 + index * stripeWidth + currentWidth / 2,
-                            0,
-                            0,
-                        ]}
-                        receiveShadow
-                    >
-                        <boxGeometry args={[currentWidth, 0.02, depth]} />
-                        <meshToonMaterial
-                            color={
-                                index % 2
-                                    ? STORYBOOK_THEME.grassLight
-                                    : STORYBOOK_THEME.grassDark
-                            }
-                        />
-                    </mesh>
-                );
-            })}
+            <mesh geometry={stripedFieldGeometry} receiveShadow>
+                <meshToonMaterial vertexColors />
+            </mesh>
             {showGrid && (
                 <lineSegments geometry={minorGridGeometry}>
                     <lineBasicMaterial

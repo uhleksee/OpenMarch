@@ -68,3 +68,22 @@ export const hasWorldPositionChanged = (
     const deltaZ = next.z - current.z;
     return deltaX * deltaX + deltaZ * deltaZ > epsilon * epsilon;
 };
+
+const normalizeRadians = (angle: number): number =>
+    Math.atan2(Math.sin(angle), Math.cos(angle));
+
+/**
+ * Point the lower body along forward and lateral travel while leaving the
+ * upper body on the drill's authored facing. Backward travel stays front-facing.
+ */
+export const getLegFacingOffset = (
+    deltaX: number,
+    deltaZ: number,
+    upperBodyYaw: number,
+): number => {
+    if (deltaX * deltaX + deltaZ * deltaZ < 0.00000001) return 0;
+
+    const travelYaw = Math.atan2(deltaX, deltaZ);
+    const relativeYaw = normalizeRadians(travelYaw - upperBodyYaw);
+    return Math.abs(relativeYaw) <= Math.PI / 2 ? relativeYaw : 0;
+};

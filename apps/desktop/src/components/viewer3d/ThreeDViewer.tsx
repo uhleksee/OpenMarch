@@ -39,6 +39,7 @@ import {
     canvasCoordinatesToWorld,
     getCameraPresetConfiguration,
     getFieldWorldDimensions,
+    getLegFacingOffset,
     hasWorldPositionChanged,
     rgbaStringToThreeColor,
 } from "./viewer3d.utils";
@@ -50,10 +51,9 @@ import { MarcherAppearanceByIdMap } from "@/hooks/queries/useMarcherAppearances"
 import LightingRig from "./LightingRig";
 import StadiumEnvironment from "./StadiumEnvironment";
 import { STORYBOOK_RENDERING, STORYBOOK_THEME } from "./sceneTheme";
-import { getMarcherDetailDistance } from "./instrumentCatalog";
 import {
     DEFAULT_VIEWER_3D_PREFERENCES,
-    type InstrumentFinish,
+    type UniformColorMode,
     type UniformStyle,
 } from "./viewer3d.types";
 
@@ -78,15 +78,19 @@ const loadViewerPreferences = () => {
             )
                 ? (parsed.uniformStyle as UniformStyle)
                 : DEFAULT_VIEWER_3D_PREFERENCES.uniformStyle,
-            instrumentFinish: ["brass", "silver"].includes(
-                parsed.instrumentFinish ?? "",
+            uniformColorMode: ["editor", "override"].includes(
+                parsed.uniformColorMode ?? "",
             )
-                ? (parsed.instrumentFinish as InstrumentFinish)
-                : DEFAULT_VIEWER_3D_PREFERENCES.instrumentFinish,
-            showCrowd:
-                typeof parsed.showCrowd === "boolean"
-                    ? parsed.showCrowd
-                    : DEFAULT_VIEWER_3D_PREFERENCES.showCrowd,
+                ? (parsed.uniformColorMode as UniformColorMode)
+                : DEFAULT_VIEWER_3D_PREFERENCES.uniformColorMode,
+            uniformColor:
+                typeof parsed.uniformColor === "string"
+                    ? parsed.uniformColor
+                    : DEFAULT_VIEWER_3D_PREFERENCES.uniformColor,
+            showLabels:
+                typeof parsed.showLabels === "boolean"
+                    ? parsed.showLabels
+                    : DEFAULT_VIEWER_3D_PREFERENCES.showLabels,
         };
     } catch {
         return DEFAULT_VIEWER_3D_PREFERENCES;
@@ -215,7 +219,6 @@ interface StaticFieldSceneProps {
     fieldDepth: number;
     showGrid: boolean;
     showHalfLines: boolean;
-    showCrowd: boolean;
 }
 
 const StaticFieldScene = memo(function StaticFieldScene({
@@ -224,7 +227,6 @@ const StaticFieldScene = memo(function StaticFieldScene({
     fieldDepth,
     showGrid,
     showHalfLines,
-    showCrowd,
 }: StaticFieldSceneProps) {
     return (
         <>
@@ -240,7 +242,6 @@ const StaticFieldScene = memo(function StaticFieldScene({
             <StadiumEnvironment
                 fieldWidth={fieldWidth}
                 fieldDepth={fieldDepth}
-                showCrowd={showCrowd}
             />
             <Field3D
                 fieldProperties={fieldProperties}
@@ -258,7 +259,9 @@ interface MarcherFormationProps {
     marcherAppearances: MarcherAppearanceByIdMap;
     fieldProperties: FieldProperties;
     uniformStyle: UniformStyle;
-    instrumentFinish: InstrumentFinish;
+    uniformColorMode: UniformColorMode;
+    uniformColor: string;
+    showLabels: boolean;
 }
 
 interface MarcherGroupRef {
@@ -272,12 +275,13 @@ function MarcherFormation({
     marcherAppearances,
     fieldProperties,
     uniformStyle,
-    instrumentFinish,
+    uniformColorMode,
+    uniformColor,
+    showLabels,
 }: MarcherFormationProps) {
     const marcherRefs = useRef(new Map<number, MarcherGroupRef>());
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
     const { isPlaying } = useIsPlaying()!;
-    const detailDistance = getMarcherDetailDistance(marchers.length);
 
     const setPausedPositions = useCallback(() => {
         for (const marcher of marchers) {
@@ -285,7 +289,10 @@ function MarcherFormation({
             const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
             if (!marcherPage || !marcherGroup) continue;
             const motionRef = marcherMotionRefs.current.get(marcher.id);
-            if (motionRef) motionRef.current = false;
+            if (motionRef) {
+                motionRef.current = false;
+                motionRef.legFacing = 0;
+            }
             marcherGroup.position.set(
                 ...canvasCoordinatesToWorld(marcherPage, fieldProperties),
             );
@@ -321,19 +328,29 @@ function MarcherFormation({
                 const coordinate = getCoordinatesAtTime(currentTime, timeline);
                 if (!coordinate) {
                     motionRef.current = false;
+                    motionRef.legFacing = 0;
                     continue;
                 }
                 const [x, y, z] = canvasCoordinatesToWorld(
                     coordinate,
                     fieldProperties,
                 );
-                motionRef.current = hasWorldPositionChanged(
+                const isMoving = hasWorldPositionChanged(
                     marcherGroup.position,
                     { x, z },
                 );
+                motionRef.current = isMoving;
+                motionRef.legFacing = isMoving
+                    ? getLegFacingOffset(
+                          x - marcherGroup.position.x,
+                          z - marcherGroup.position.z,
+                          marcherGroup.rotation.y,
+                      )
+                    : 0;
                 marcherGroup.position.set(x, y, z);
             } catch {
                 motionRef.current = false;
+                motionRef.legFacing = 0;
                 // A drill timeline query may still be loading at this frame.
             }
         }
@@ -350,7 +367,7 @@ function MarcherFormation({
                 );
                 let motionRef = marcherMotionRefs.current.get(marcher.id);
                 if (!motionRef) {
-                    motionRef = { current: false };
+                    motionRef = { current: false, legFacing: 0 };
                     marcherMotionRefs.current.set(marcher.id, motionRef);
                 }
                 let marcherGroupRef = marcherRefs.current.get(marcher.id);
@@ -368,12 +385,15 @@ function MarcherFormation({
                         <Marcher3D
                             marcherId={marcher.id}
                             drillNumber={marcher.drill_number}
-                            section={marcher.section}
-                            color={rgbaStringToThreeColor(appearance.fillRgba)}
-                            labelVisible={appearance.textVisible}
+                            color={
+                                uniformColorMode === "override"
+                                    ? uniformColor
+                                    : rgbaStringToThreeColor(
+                                          appearance.fillRgba,
+                                      )
+                            }
+                            labelVisible={showLabels && appearance.textVisible}
                             uniformStyle={uniformStyle}
-                            instrumentFinish={instrumentFinish}
-                            detailDistance={detailDistance}
                             motionRef={motionRef}
                         />
                     </group>
@@ -425,7 +445,7 @@ export default function ThreeDViewer() {
     return (
         <div className="bg-bg-2 rounded-6 relative h-full w-full overflow-hidden">
             <ThreeCanvas
-                shadows="basic"
+                shadows="percentage"
                 dpr={[1, 1.5]}
                 performance={{ min: 0.6 }}
                 gl={{
@@ -441,7 +461,6 @@ export default function ThreeDViewer() {
                     fieldDepth={depth}
                     showGrid={uiSettings.gridLines}
                     showHalfLines={uiSettings.halfLines}
-                    showCrowd={preferences.showCrowd}
                 />
                 <MarcherFormation
                     marchers={marchers}
@@ -450,7 +469,9 @@ export default function ThreeDViewer() {
                     marcherAppearances={marcherAppearances}
                     fieldProperties={fieldProperties}
                     uniformStyle={preferences.uniformStyle}
-                    instrumentFinish={preferences.instrumentFinish}
+                    uniformColorMode={preferences.uniformColorMode}
+                    uniformColor={preferences.uniformColor}
+                    showLabels={preferences.showLabels}
                 />
                 <MemoizedCameraRig
                     preset={cameraPreset}
@@ -508,47 +529,64 @@ export default function ThreeDViewer() {
                     </label>
 
                     <label className="flex flex-col gap-1">
-                        <span className="text-text/70">Instrument finish</span>
+                        <span className="text-text/70">Uniform colors</span>
                         <select
-                            value={preferences.instrumentFinish}
+                            value={preferences.uniformColorMode}
                             onChange={(event) =>
                                 setPreferences((current) => ({
                                     ...current,
-                                    instrumentFinish: event.target
-                                        .value as InstrumentFinish,
+                                    uniformColorMode: event.target
+                                        .value as UniformColorMode,
                                 }))
                             }
                             className="border-stroke bg-bg-2 rounded-4 border px-3 py-2"
                         >
-                            <option value="brass">Brass</option>
-                            <option value="silver">Silver</option>
+                            <option value="editor">From 2D editor</option>
+                            <option value="override">Single color</option>
                         </select>
                     </label>
 
+                    {preferences.uniformColorMode === "override" && (
+                        <label className="flex flex-col gap-1">
+                            <span className="text-text/70">Color</span>
+                            <input
+                                type="color"
+                                aria-label="3D uniform color"
+                                value={preferences.uniformColor}
+                                onChange={(event) =>
+                                    setPreferences((current) => ({
+                                        ...current,
+                                        uniformColor: event.target.value,
+                                    }))
+                                }
+                                className="border-stroke bg-bg-2 h-9 w-14 rounded border p-1"
+                            />
+                        </label>
+                    )}
+
                     <button
                         type="button"
-                        aria-pressed={preferences.showCrowd}
+                        aria-pressed={preferences.showLabels}
                         onClick={() =>
                             setPreferences((current) => ({
                                 ...current,
-                                showCrowd: !current.showCrowd,
+                                showLabels: !current.showLabels,
                             }))
                         }
                         className={clsx(
                             "rounded-4 border px-4 py-2 transition-colors",
-                            preferences.showCrowd
+                            preferences.showLabels
                                 ? "border-accent bg-fg-2 text-accent"
                                 : "border-stroke hover:bg-fg-2",
                         )}
                     >
-                        Crowd {preferences.showCrowd ? "on" : "off"}
+                        Labels {preferences.showLabels ? "on" : "off"}
                     </button>
                 </div>
             </div>
 
             <p className="bg-bg-1/80 text-text/80 pointer-events-none absolute bottom-6 left-6 rounded-md px-8 py-4 text-xs backdrop-blur-sm">
-                Instruments follow each marcher&apos;s section · drag to orbit ·
-                right-drag to pan · scroll to zoom
+                Drag to orbit · right-drag to pan · scroll to zoom
             </p>
         </div>
     );

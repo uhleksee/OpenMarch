@@ -5,6 +5,7 @@ import {
     getCameraPresetConfiguration,
     getFieldWorldDimensions,
     hasWorldPositionChanged,
+    getLegFacingOffset,
     rgbaStringToThreeColor,
 } from "../viewer3d.utils";
 import { getFieldNumberMarkers } from "../FieldNumbers";
@@ -69,5 +70,22 @@ describe("3D viewer coordinate utilities", () => {
         expect(
             hasWorldPositionChanged({ x: 12, z: -8 }, { x: 12.1, z: -8 }),
         ).toBe(true);
+    });
+});
+
+describe("getLegFacingOffset", () => {
+    it("faces the legs toward forward and lateral travel", () => {
+        expect(getLegFacingOffset(0, 1, 0)).toBeCloseTo(0);
+        expect(getLegFacingOffset(1, 0, 0)).toBeCloseTo(Math.PI / 2);
+        expect(getLegFacingOffset(-1, 0, 0)).toBeCloseTo(-Math.PI / 2);
+    });
+
+    it("keeps the legs front-facing for backward travel and holds", () => {
+        expect(getLegFacingOffset(0, -1, 0)).toBe(0);
+        expect(getLegFacingOffset(0, 0, 0)).toBe(0);
+    });
+
+    it("uses the authored upper-body facing as its reference", () => {
+        expect(getLegFacingOffset(1, 0, Math.PI / 2)).toBeCloseTo(0);
     });
 });
