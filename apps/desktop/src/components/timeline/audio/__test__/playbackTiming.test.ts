@@ -4,8 +4,7 @@ import { calculateLivePlaybackSeconds } from "../playbackTiming";
 describe("calculateLivePlaybackSeconds", () => {
     const playback = {
         playStartTime: 10.02,
-        startTimestamp: 12,
-        pageDuration: 4,
+        startOffset: 16,
     };
 
     it("waits at the page departure until scheduled audio begins", () => {
@@ -14,5 +13,14 @@ describe("calculateLivePlaybackSeconds", () => {
 
     it("uses the same elapsed clock as the scheduled audio", () => {
         expect(calculateLivePlaybackSeconds(11.52, playback)).toBe(17.5);
+    });
+
+    it("resumes from an exact mid-page offset", () => {
+        expect(
+            calculateLivePlaybackSeconds(21, {
+                playStartTime: 20,
+                startOffset: 17.25,
+            }),
+        ).toBe(18.25);
     });
 });

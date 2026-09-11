@@ -1,6 +1,6 @@
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import { ClockIcon } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getLivePlaybackPosition } from "@/components/timeline/audio/AudioPlayer";
 import { useSelectedPage } from "@/context/SelectedPageContext";
 
@@ -11,6 +11,7 @@ export function AudioClock() {
     const { isPlaying } = useIsPlaying()!;
     const { selectedPage } = useSelectedPage()!;
     const [displayTime, setDisplayTime] = useState<number>(0);
+    const wasPlayingRef = useRef(false);
 
     // Animation frame loop to update the displayed time
     useEffect(() => {
@@ -23,11 +24,16 @@ export function AudioClock() {
 
         if (isPlaying) {
             update();
+        } else if (wasPlayingRef.current) {
+            // The audio tracker is still available during this effect pass,
+            // so preserve the exact mid-page position when playback stops.
+            setDisplayTime(getLivePlaybackPosition());
         } else {
             setDisplayTime(
                 (selectedPage?.timestamp ?? 0) + (selectedPage?.duration ?? 0),
             );
         }
+        wasPlayingRef.current = isPlaying;
 
         return () => {
             cancelAnimationFrame(rafId);

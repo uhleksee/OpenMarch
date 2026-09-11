@@ -381,9 +381,10 @@ export default function AudioPlayer() {
             const audioSource = audioContext.createBufferSource();
             audioSource.buffer = audioBuffer;
             audioGainNode.current = audioContext.createGain();
+            const playbackSettings = useUiSettingsStore.getState().uiSettings;
             audioGainNode.current.gain.value = calculateMasterVolume(
-                audioVolume,
-                audioMuted,
+                playbackSettings.audioVolume,
+                playbackSettings.audioMuted,
             );
             audioSource
                 .connect(audioGainNode.current)
@@ -391,7 +392,10 @@ export default function AudioPlayer() {
 
             const metroSource = audioContext.createBufferSource();
             metroGainNode.current = audioContext.createGain();
-            const masterVolume = calculateMasterVolume(audioVolume, audioMuted);
+            const masterVolume = calculateMasterVolume(
+                playbackSettings.audioVolume,
+                playbackSettings.audioMuted,
+            );
             // Read metronome settings at playback start, live changes update gain below without restarting
             const { isMetronomeOn: metronomeOn, volume: metronomeVolume } =
                 useMetronomeStore.getState();
@@ -421,12 +425,17 @@ export default function AudioPlayer() {
             // Store playback tracking info for live position
             playbackStartInfoRef.current = {
                 playStartTime: startAt,
-                startTimestamp: selectedPage?.timestamp ?? 0,
-                pageDuration: selectedPage?.duration ?? 0,
+                startOffset: playbackTimestamp,
             };
         } else {
+            const pausedAt = playbackStartInfoRef.current
+                ? getLivePlaybackPosition()
+                : null;
+
             // If not playing, stop any existing playback
             stopPlayback();
+
+            if (pausedAt !== null) setPlaybackTimestamp(pausedAt);
 
             // Clear playback tracking info
             playbackStartInfoRef.current = null;
@@ -434,7 +443,6 @@ export default function AudioPlayer() {
 
         return () => {
             stopPlayback();
-            playbackStartInfoRef.current = null;
         };
     }, [
         isPlaying,
@@ -443,9 +451,14 @@ export default function AudioPlayer() {
         isAudioProcessing,
         metronomeBuffer,
         playbackTimestamp,
-        audioVolume,
-        audioMuted,
     ]);
+
+    useEffect(
+        () => () => {
+            playbackStartInfoRef.current = null;
+        },
+        [],
+    );
 
     // Initialize WaveSurfer and load waveform data
     useEffect(() => {
@@ -517,12 +530,16 @@ export default function AudioPlayer() {
         }
     }, [audioMuted, audioVolume]);
 
-    // Snap WaveSurfer to correct position when paused
+    // Preserve the exact playback position when paused. Manual page selection
+    // updates playbackTimestamp to that page's departure time above.
     useEffect(() => {
         if (!waveSurfer || !audioBuffer || isPlaying) return;
+        if (audioDuration <= 0) return;
 
-        seekWaveSurferToPausedPosition(waveSurfer, selectedPage, audioDuration);
-    }, [waveSurfer, audioBuffer, audioDuration, selectedPage, isPlaying]);
+        waveSurfer.seekTo(
+            Math.max(0, Math.min(1, playbackTimestamp / audioDuration)),
+        );
+    }, [waveSurfer, audioBuffer, audioDuration, playbackTimestamp, isPlaying]);
 
     // Animate WaveSurfer progress bar when playing
     useEffect(() => {

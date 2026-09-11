@@ -365,16 +365,18 @@ export default function Canvas({
 
     // Render the marchers when the selected page or the marcher pages change
     useEffect(() => {
+        if (activeCanvas && selectedPage) {
+            activeCanvas.currentPage = selectedPage;
+        }
         if (
             !activeCanvas ||
+            isPlaying ||
             !selectedPage ||
             !marchers ||
             !marcherPagesLoaded ||
             marcherVisuals == null
         )
             return;
-
-        activeCanvas.currentPage = selectedPage;
 
         activeCanvas
             .renderMarchers({
@@ -391,12 +393,14 @@ export default function Canvas({
         marcherVisuals,
         marchers,
         selectedPage,
+        isPlaying,
     ]);
 
     // Renders pathways when selected page or settings change
     useEffect(() => {
         if (
             !activeCanvas ||
+            isPlaying ||
             !selectedPage ||
             !fieldProperties ||
             !marcherPagesLoaded ||
@@ -438,6 +442,7 @@ export default function Canvas({
         uiSettings.stepSizeWarnings,
         marcherVisuals,
         marcherPagesLoaded,
+        isPlaying,
     ]);
 
     // Update the canvas when the field properties change

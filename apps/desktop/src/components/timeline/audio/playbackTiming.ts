@@ -1,13 +1,11 @@
 export interface PlaybackStartInfo {
     playStartTime: number;
-    startTimestamp: number;
-    pageDuration: number;
+    startOffset: number;
 }
 
 export const calculateLivePlaybackSeconds = (
     currentAudioTime: number,
     playback: PlaybackStartInfo,
 ): number =>
-    playback.startTimestamp +
-    playback.pageDuration +
+    playback.startOffset +
     Math.max(0, currentAudioTime - playback.playStartTime);
