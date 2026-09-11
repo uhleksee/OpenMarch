@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+    startTransition,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+} from "react";
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
 import { getCoordinatesAtTime } from "@/utilities/Keyframes";
@@ -32,11 +38,7 @@ export const useAnimation = ({
     const { setSelectedPage, selectedPage } = useSelectedPage()!;
     const selectedPageRef = useRef(selectedPage);
     const { isPlaying, setIsPlaying } = useIsPlaying()!;
-    const {
-        collisions: pageCollisions,
-        // setCollisions,
-        setCurrentCollision,
-    } = useCollisionStore();
+    const { setCurrentCollision } = useCollisionStore();
 
     // The number of pages +/- to fetch
     const PAGE_DELTA = 2;
@@ -156,24 +158,11 @@ export const useAnimation = ({
     //     setCollisions(marchers, marcherTimelines, pages, marcherPages);
     // }, [marchers, marcherTimelines, pages, marcherPages]);
 
-    // Get collisions for the currently selected page
-    const getCollisionsForSelectedPage = useCallback(() => {
-        if (!selectedPage) {
-            return [];
-        }
-
-        // this looks stupid but empty array if nothing is returned
-        const collisions = selectedPage.nextPageId
-            ? pageCollisions.get(selectedPage.nextPageId)
-            : [];
-
-        return collisions ?? [];
-    }, [pageCollisions, selectedPage]);
-
-    // Update collisions when selected page changes
+    // Collision markers are editor-only and do not need to update at each
+    // playback boundary. Refresh them once playback is paused instead.
     useEffect(() => {
-        setCurrentCollision(selectedPage);
-    }, [selectedPage, getCollisionsForSelectedPage, setCurrentCollision]);
+        if (!isPlaying) setCurrentCollision(selectedPage);
+    }, [isPlaying, selectedPage, setCurrentCollision]);
 
     // Set marcher positions at a specific time
     const setMarcherPositionsAtTime = useCallback(
@@ -231,7 +220,7 @@ export const useAnimation = ({
                     lastPage.id !== pendingPageIdRef.current
                 ) {
                     pendingPageIdRef.current = lastPage.id;
-                    setSelectedPage(lastPage);
+                    startTransition(() => setSelectedPage(lastPage));
                 }
                 setIsPlaying(false);
             } else if (
@@ -240,7 +229,7 @@ export const useAnimation = ({
             ) {
                 // We're on a different page, set the selected page to the current page
                 pendingPageIdRef.current = currentPage.id;
-                setSelectedPage(currentPage);
+                startTransition(() => setSelectedPage(currentPage));
             }
         },
         [pages, pagesById, setSelectedPage, setIsPlaying],
