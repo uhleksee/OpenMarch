@@ -86,7 +86,7 @@ export default function PerformanceDiagnosticsPanel({
                 aria-pressed={enabled}
                 onClick={() => setEnabled(!enabled)}
                 className={clsx(
-                    "rounded-6 border px-8 py-5 text-xs font-semibold shadow-lg backdrop-blur-sm",
+                    "rounded-6 border px-8 py-5 text-xs font-semibold whitespace-nowrap shadow-lg backdrop-blur-sm",
                     enabled
                         ? "border-accent bg-fg-2 text-accent"
                         : "border-stroke bg-bg-1/90 text-text hover:bg-fg-2",
@@ -96,21 +96,23 @@ export default function PerformanceDiagnosticsPanel({
             </button>
 
             {enabled && (
-                <div className="border-stroke bg-bg-1/95 text-text flex w-64 flex-col gap-4 rounded-lg border p-6 text-xs shadow-xl backdrop-blur-sm">
-                    <label className="flex items-center gap-3">
+                <div className="border-stroke bg-bg-1/95 text-text flex w-[288px] max-w-[calc(100vw-24px)] flex-col gap-4 rounded-lg border p-6 text-xs shadow-xl backdrop-blur-sm">
+                    <label className="flex items-start gap-3 leading-5">
                         <input
                             type="checkbox"
                             checked={freezePageUpdates}
+                            className="mt-1 shrink-0"
                             onChange={(event) =>
                                 setFreezePageUpdates(event.target.checked)
                             }
                         />
                         Freeze editor page updates
                     </label>
-                    <label className="flex items-center gap-3">
+                    <label className="flex items-start gap-3 leading-5">
                         <input
                             type="checkbox"
                             checked={freezeWaveform}
+                            className="mt-1 shrink-0"
                             onChange={(event) =>
                                 setFreezeWaveform(event.target.checked)
                             }
@@ -128,7 +130,7 @@ export default function PerformanceDiagnosticsPanel({
                                             .value as DiagnosticSceneMode,
                                     )
                                 }
-                                className="border-stroke bg-bg-2 rounded-4 border px-3 py-2"
+                                className="border-stroke bg-bg-2 rounded-4 w-full border px-3 py-2"
                             >
                                 {(
                                     Object.keys(
@@ -142,8 +144,11 @@ export default function PerformanceDiagnosticsPanel({
                             </select>
                         </label>
                     )}
-                    <pre ref={outputRef} className="font-mono leading-5" />
-                    <p className="text-text/60 leading-4">
+                    <pre
+                        ref={outputRef}
+                        className="m-0 w-full overflow-hidden font-mono leading-5 whitespace-pre tabular-nums"
+                    />
+                    <p className="border-stroke text-text/60 border-t pt-4 leading-4">
                         Change one option at a time while playing the same
                         pages.
                     </p>
