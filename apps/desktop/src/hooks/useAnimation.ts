@@ -1,10 +1,4 @@
-import {
-    startTransition,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
 import { getCoordinatesAtTime } from "@/utilities/Keyframes";
@@ -14,6 +8,7 @@ import { useSelectedPage } from "@/context/SelectedPageContext";
 import { useCollisionStore } from "@/stores/CollisionStore";
 import { useManyCoordinateData } from "./queries/useCoordinateData";
 import Page from "@/global/classes/Page";
+import { usePerformanceDiagnosticsStore } from "@/stores/PerformanceDiagnosticsStore";
 
 interface UseAnimationProps {
     canvas: OpenMarchCanvas | null;
@@ -38,7 +33,15 @@ export const useAnimation = ({
     const { setSelectedPage, selectedPage } = useSelectedPage()!;
     const selectedPageRef = useRef(selectedPage);
     const { isPlaying, setIsPlaying } = useIsPlaying()!;
-    const { setCurrentCollision } = useCollisionStore();
+    const { collisions: pageCollisions, setCurrentCollision } =
+        useCollisionStore();
+    const diagnosticsEnabled = usePerformanceDiagnosticsStore(
+        (state) => state.enabled,
+    );
+    const diagnosticPageFreeze = usePerformanceDiagnosticsStore(
+        (state) => state.freezePageUpdates,
+    );
+    const freezePageUpdates = diagnosticsEnabled && diagnosticPageFreeze;
 
     // The number of pages +/- to fetch
     const PAGE_DELTA = 2;
@@ -46,12 +49,15 @@ export const useAnimation = ({
     const animationPages = useMemo(
         () =>
             renderedPage
-                ? pages.filter(
-                      (p) =>
-                          Math.abs(p.order - renderedPage.order) <= PAGE_DELTA,
-                  )
+                ? freezePageUpdates
+                    ? pages
+                    : pages.filter(
+                          (p) =>
+                              Math.abs(p.order - renderedPage.order) <=
+                              PAGE_DELTA,
+                      )
                 : [],
-        [pages, renderedPage],
+        [freezePageUpdates, pages, renderedPage],
     );
     const { data: marcherTimelines } = useManyCoordinateData(animationPages);
 
@@ -158,11 +164,19 @@ export const useAnimation = ({
     //     setCollisions(marchers, marcherTimelines, pages, marcherPages);
     // }, [marchers, marcherTimelines, pages, marcherPages]);
 
-    // Collision markers are editor-only and do not need to update at each
-    // playback boundary. Refresh them once playback is paused instead.
+    // Get collisions for the currently selected page
+    const getCollisionsForSelectedPage = useCallback(() => {
+        if (!selectedPage) return [];
+        const collisions = selectedPage.nextPageId
+            ? pageCollisions.get(selectedPage.nextPageId)
+            : [];
+        return collisions ?? [];
+    }, [pageCollisions, selectedPage]);
+
+    // Update collisions when selected page changes
     useEffect(() => {
-        if (!isPlaying) setCurrentCollision(selectedPage);
-    }, [isPlaying, selectedPage, setCurrentCollision]);
+        setCurrentCollision(selectedPage);
+    }, [selectedPage, getCollisionsForSelectedPage, setCurrentCollision]);
 
     // Set marcher positions at a specific time
     const setMarcherPositionsAtTime = useCallback(
@@ -216,23 +230,25 @@ export const useAnimation = ({
                 // We're past the end, set the selected page to the last one and stop playing
                 const lastPage = pages[pages.length - 1];
                 if (
+                    !freezePageUpdates &&
                     lastPage.id !== selectedPageRef.current?.id &&
                     lastPage.id !== pendingPageIdRef.current
                 ) {
                     pendingPageIdRef.current = lastPage.id;
-                    startTransition(() => setSelectedPage(lastPage));
+                    setSelectedPage(lastPage);
                 }
                 setIsPlaying(false);
             } else if (
+                !freezePageUpdates &&
                 currentPage.id !== selectedPageRef.current?.id &&
                 currentPage.id !== pendingPageIdRef.current
             ) {
                 // We're on a different page, set the selected page to the current page
                 pendingPageIdRef.current = currentPage.id;
-                startTransition(() => setSelectedPage(currentPage));
+                setSelectedPage(currentPage);
             }
         },
-        [pages, pagesById, setSelectedPage, setIsPlaying],
+        [freezePageUpdates, pages, pagesById, setSelectedPage, setIsPlaying],
     );
 
     // Animate the canvas based on playback timestamp

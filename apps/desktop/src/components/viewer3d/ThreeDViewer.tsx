@@ -57,6 +57,10 @@ import {
     type UniformColorMode,
     type UniformStyle,
 } from "./viewer3d.types";
+import {
+    threeDiagnosticSnapshot,
+    usePerformanceDiagnosticsStore,
+} from "@/stores/PerformanceDiagnosticsStore";
 
 const CAMERA_LABELS: Record<CameraPreset, string> = {
     overhead: "Overhead",
@@ -65,6 +69,57 @@ const CAMERA_LABELS: Record<CameraPreset, string> = {
 };
 
 const VIEWER_PREFERENCES_KEY = "openmarch-3d-viewer-preferences";
+
+function PerformanceSampler() {
+    const { gl } = useThree();
+    const sampleStartedAtRef = useRef(0);
+    const frameCountRef = useRef(0);
+    const frameTotalMsRef = useRef(0);
+    const worstFrameMsRef = useRef(0);
+
+    useEffect(
+        () => () => {
+            Object.assign(threeDiagnosticSnapshot, {
+                fps: null,
+                averageFrameMs: null,
+                worstFrameMs: null,
+                drawCalls: null,
+                triangles: null,
+                geometries: null,
+                textures: null,
+            });
+        },
+        [],
+    );
+
+    useFrame(({ clock }, delta) => {
+        const now = clock.elapsedTime;
+        if (sampleStartedAtRef.current === 0) sampleStartedAtRef.current = now;
+        const frameMs = delta * 1000;
+        frameCountRef.current += 1;
+        frameTotalMsRef.current += frameMs;
+        worstFrameMsRef.current = Math.max(worstFrameMsRef.current, frameMs);
+
+        if (now - sampleStartedAtRef.current < 0.75) return;
+        const averageFrameMs =
+            frameTotalMsRef.current / Math.max(1, frameCountRef.current);
+        Object.assign(threeDiagnosticSnapshot, {
+            fps: Math.round(1000 / averageFrameMs),
+            averageFrameMs,
+            worstFrameMs: worstFrameMsRef.current,
+            drawCalls: gl.info.render.calls,
+            triangles: gl.info.render.triangles,
+            geometries: gl.info.memory.geometries,
+            textures: gl.info.memory.textures,
+        });
+        sampleStartedAtRef.current = now;
+        frameCountRef.current = 0;
+        frameTotalMsRef.current = 0;
+        worstFrameMsRef.current = 0;
+    });
+
+    return null;
+}
 
 const loadViewerPreferences = () => {
     try {
@@ -228,6 +283,7 @@ interface StaticFieldSceneProps {
     showGrid: boolean;
     showHalfLines: boolean;
     lightingMode: LightingMode;
+    showEnvironment: boolean;
 }
 
 const StaticFieldScene = memo(function StaticFieldScene({
@@ -237,6 +293,7 @@ const StaticFieldScene = memo(function StaticFieldScene({
     showGrid,
     showHalfLines,
     lightingMode,
+    showEnvironment,
 }: StaticFieldSceneProps) {
     const lighting = LIGHTING_THEMES[lightingMode];
     return (
@@ -254,11 +311,13 @@ const StaticFieldScene = memo(function StaticFieldScene({
                 fieldDepth={fieldDepth}
                 mode={lightingMode}
             />
-            <StadiumEnvironment
-                fieldWidth={fieldWidth}
-                fieldDepth={fieldDepth}
-                lightingMode={lightingMode}
-            />
+            {showEnvironment && (
+                <StadiumEnvironment
+                    fieldWidth={fieldWidth}
+                    fieldDepth={fieldDepth}
+                    lightingMode={lightingMode}
+                />
+            )}
             <Field3D
                 fieldProperties={fieldProperties}
                 showGrid={showGrid}
@@ -427,6 +486,12 @@ export default function ThreeDViewer() {
     const { selectedPage } = useSelectedPage()!;
     const { pages } = useTimingObjects();
     const { uiSettings } = useUiSettingsStore();
+    const diagnosticsEnabled = usePerformanceDiagnosticsStore(
+        (state) => state.enabled,
+    );
+    const diagnosticSceneMode = usePerformanceDiagnosticsStore(
+        (state) => state.sceneMode,
+    );
     const { data: fieldProperties } = useQuery(
         fieldPropertiesQueryOptions(databaseReady),
     );
@@ -457,6 +522,14 @@ export default function ThreeDViewer() {
     }
 
     const { width, depth } = getFieldWorldDimensions(fieldProperties);
+    const showEnvironment =
+        !diagnosticsEnabled ||
+        diagnosticSceneMode === "full" ||
+        diagnosticSceneMode === "environment";
+    const showPerformers =
+        !diagnosticsEnabled ||
+        diagnosticSceneMode === "full" ||
+        diagnosticSceneMode === "performers";
 
     return (
         <div className="bg-bg-2 rounded-6 relative h-full w-full overflow-hidden">
@@ -478,23 +551,27 @@ export default function ThreeDViewer() {
                     showGrid={uiSettings.gridLines}
                     showHalfLines={uiSettings.halfLines}
                     lightingMode={preferences.lightingMode}
+                    showEnvironment={showEnvironment}
                 />
-                <MarcherFormation
-                    marchers={marchers}
-                    marcherPages={marcherPages}
-                    marcherTimelines={marcherTimelines}
-                    marcherAppearances={marcherAppearances}
-                    fieldProperties={fieldProperties}
-                    uniformStyle={preferences.uniformStyle}
-                    uniformColorMode={preferences.uniformColorMode}
-                    uniformColor={preferences.uniformColor}
-                    showLabels={preferences.showLabels}
-                />
+                {showPerformers && (
+                    <MarcherFormation
+                        marchers={marchers}
+                        marcherPages={marcherPages}
+                        marcherTimelines={marcherTimelines}
+                        marcherAppearances={marcherAppearances}
+                        fieldProperties={fieldProperties}
+                        uniformStyle={preferences.uniformStyle}
+                        uniformColorMode={preferences.uniformColorMode}
+                        uniformColor={preferences.uniformColor}
+                        showLabels={preferences.showLabels}
+                    />
+                )}
                 <MemoizedCameraRig
                     preset={cameraPreset}
                     fieldWidth={width}
                     fieldDepth={depth}
                 />
+                {diagnosticsEnabled && <PerformanceSampler />}
             </ThreeCanvas>
 
             <div className="absolute top-6 right-6 z-10 flex max-w-[calc(100%_-_3rem)] flex-col items-end gap-3">

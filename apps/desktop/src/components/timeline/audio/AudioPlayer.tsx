@@ -24,6 +24,7 @@ import {
     calculateLivePlaybackSeconds,
     type PlaybackStartInfo,
 } from "./playbackTiming";
+import { usePerformanceDiagnosticsStore } from "@/stores/PerformanceDiagnosticsStore";
 
 export const waveColor = "rgb(180, 180, 180)";
 export const lightProgressColor = "rgb(100, 66, 255)";
@@ -98,6 +99,13 @@ export default function AudioPlayer() {
         !!selectedAudioFileContext;
     const selectedPage = selectedPageContext?.selectedPage ?? null;
     const isPlaying = isPlayingContext?.isPlaying ?? false;
+    const diagnosticsEnabled = usePerformanceDiagnosticsStore(
+        (state) => state.enabled,
+    );
+    const diagnosticWaveformFreeze = usePerformanceDiagnosticsStore(
+        (state) => state.freezeWaveform,
+    );
+    const freezeWaveform = diagnosticsEnabled && diagnosticWaveformFreeze;
     const selectedAudioFile =
         selectedAudioFileContext?.selectedAudioFile ?? null;
     // Metronome state management
@@ -543,7 +551,7 @@ export default function AudioPlayer() {
 
     // Animate WaveSurfer progress bar when playing
     useEffect(() => {
-        if (!waveSurfer || !audioBuffer || !isPlaying) return;
+        if (!waveSurfer || !audioBuffer || !isPlaying || freezeWaveform) return;
 
         let isActive = true;
         let rafId: number;
@@ -565,7 +573,7 @@ export default function AudioPlayer() {
             isActive = false;
             cancelAnimationFrame(rafId);
         };
-    }, [waveSurfer, audioBuffer, audioDuration, isPlaying]);
+    }, [waveSurfer, audioBuffer, audioDuration, isPlaying, freezeWaveform]);
 
     const measuresDuration = useMemo(() => {
         if (!measures.length) {

@@ -557,10 +557,10 @@ export default function Canvas({
     // This effect ensures that when the animation is playing, the shape paths
     // are removed from the canvas.
     useEffect(() => {
-        if (activeCanvas && isPlaying) {
+        if (activeCanvas && isPlaying && selectedPage) {
             activeCanvas.removeAllObjectsByType(ShapePath);
         }
-    }, [activeCanvas, isPlaying]);
+    }, [activeCanvas, isPlaying, selectedPage]);
 
     // Render collision markers when paused
     useEffect(() => {
@@ -591,7 +591,13 @@ export default function Canvas({
         }
 
         activeCanvas.requestRenderAll();
-    }, [activeCanvas, isPlaying, currentCollisions, uiSettings.showCollisions]);
+    }, [
+        activeCanvas,
+        isPlaying,
+        currentCollisions,
+        selectedPage,
+        uiSettings.showCollisions,
+    ]);
 
     return (
         <div

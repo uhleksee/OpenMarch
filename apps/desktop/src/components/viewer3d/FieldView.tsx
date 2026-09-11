@@ -3,6 +3,7 @@ import Canvas from "@/components/canvas/Canvas";
 import CanvasZoomControls from "@/components/canvas/CanvasZoomControls";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
 import clsx from "clsx";
+import PerformanceDiagnosticsPanel from "./PerformanceDiagnosticsPanel";
 
 const ThreeDViewer = lazy(() => import("./ThreeDViewer"));
 
@@ -88,6 +89,7 @@ export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
             </div>
 
             {viewMode === "2d" && <CanvasZoomControls canvas={canvas} />}
+            <PerformanceDiagnosticsPanel viewMode={viewMode} />
         </div>
     );
 }

@@ -1,4 +1,7 @@
 import type { FieldProperties } from "@openmarch/core";
+import { useEffect, useMemo } from "react";
+import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { getFieldWorldDimensions } from "./viewer3d.utils";
 import { STORYBOOK_THEME } from "./sceneTheme";
 
@@ -79,46 +82,61 @@ export const getFieldNumberMarkers = (
     return markers;
 };
 
-function Digit({ value, offset }: { value: string; offset: number }) {
-    return (
-        <group position={[offset, 0, 0]}>
-            {(DIGIT_SEGMENTS[value] ?? []).map((segmentName) => {
-                const segment = SEGMENT_LAYOUT[segmentName];
-                return (
-                    <mesh key={segmentName} position={segment.position}>
-                        <boxGeometry args={segment.size} />
-                        <meshBasicMaterial color={STORYBOOK_THEME.line} />
-                    </mesh>
-                );
-            })}
-        </group>
-    );
-}
+const buildFieldNumberGeometry = (fieldProperties: FieldProperties) => {
+    const segmentGeometries: THREE.BufferGeometry[] = [];
+    const markerMatrix = new THREE.Matrix4();
+    const localMatrix = new THREE.Matrix4();
+    const worldMatrix = new THREE.Matrix4();
+    const markerQuaternion = new THREE.Quaternion();
+    const markerScale = new THREE.Vector3();
 
-function FieldNumber({ marker }: { marker: FieldNumberMarker }) {
-    const digits = marker.label.padStart(2, "0").split("");
-    return (
-        <group
-            position={[marker.x, 0.045, marker.z]}
-            rotation={[0, marker.rotation, 0]}
-            scale={marker.scale}
-        >
-            <Digit value={digits[0]} offset={-0.55} />
-            <Digit value={digits[1]} offset={0.55} />
-        </group>
-    );
-}
+    for (const marker of getFieldNumberMarkers(fieldProperties)) {
+        markerQuaternion.setFromEuler(new THREE.Euler(0, marker.rotation, 0));
+        markerScale.setScalar(marker.scale);
+        markerMatrix.compose(
+            new THREE.Vector3(marker.x, 0.045, marker.z),
+            markerQuaternion,
+            markerScale,
+        );
+
+        const digits = marker.label.padStart(2, "0").split("");
+        digits.forEach((digit, digitIndex) => {
+            const digitOffset = digitIndex === 0 ? -0.55 : 0.55;
+            for (const segmentName of DIGIT_SEGMENTS[digit] ?? []) {
+                const segment = SEGMENT_LAYOUT[segmentName];
+                const geometry = new THREE.BoxGeometry(...segment.size);
+                localMatrix.makeTranslation(
+                    digitOffset + segment.position[0],
+                    segment.position[1],
+                    segment.position[2],
+                );
+                worldMatrix.multiplyMatrices(markerMatrix, localMatrix);
+                geometry.applyMatrix4(worldMatrix);
+                segmentGeometries.push(geometry);
+            }
+        });
+    }
+
+    const merged = mergeGeometries(segmentGeometries, false);
+    segmentGeometries.forEach((geometry) => geometry.dispose());
+    return merged ?? new THREE.BufferGeometry();
+};
 
 export default function FieldNumbers({
     fieldProperties,
 }: {
     fieldProperties: FieldProperties;
 }) {
+    const geometry = useMemo(
+        () => buildFieldNumberGeometry(fieldProperties),
+        [fieldProperties],
+    );
+
+    useEffect(() => () => geometry.dispose(), [geometry]);
+
     return (
-        <group>
-            {getFieldNumberMarkers(fieldProperties).map((marker) => (
-                <FieldNumber key={marker.key} marker={marker} />
-            ))}
-        </group>
+        <mesh geometry={geometry}>
+            <meshBasicMaterial color={STORYBOOK_THEME.line} />
+        </mesh>
     );
 }

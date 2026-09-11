@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { LIGHTING_THEMES, STORYBOOK_THEME } from "./sceneTheme";
 import type { LightingMode } from "./viewer3d.types";
 
@@ -68,25 +69,10 @@ function Cloud({
     scale?: number;
 }) {
     return (
-        <group position={position} scale={scale}>
-            {[
-                [-2.2, 0, 0, 1.5],
-                [-0.7, 0.45, 0, 1.9],
-                [1.1, 0.2, 0, 1.65],
-                [2.45, -0.08, 0, 1.25],
-            ].map(([x, y, z, size], index) => (
-                <mesh key={index} position={[x, y, z]} scale={size}>
-                    <icosahedronGeometry args={[1, 2]} />
-                    <meshToonMaterial
-                        color={
-                            index % 2
-                                ? STORYBOOK_THEME.cloudLight
-                                : STORYBOOK_THEME.cloudShade
-                        }
-                    />
-                </mesh>
-            ))}
-        </group>
+        <mesh position={position} scale={[scale * 3.6, scale, scale * 1.15]}>
+            <icosahedronGeometry args={[1, 1]} />
+            <meshToonMaterial color={STORYBOOK_THEME.cloudLight} />
+        </mesh>
     );
 }
 
@@ -109,16 +95,8 @@ function Tree({
                 <cylinderGeometry args={[0.18, 0.28, 2.7, 6]} />
                 <meshToonMaterial color={STORYBOOK_THEME.treeTrunk} />
             </mesh>
-            <mesh position={[0, 3.3, 0]} castShadow>
-                <icosahedronGeometry args={[1.55, 1]} />
-                <meshToonMaterial color={crownColor} />
-            </mesh>
-            <mesh position={[-0.9, 2.85, 0.25]} castShadow>
-                <icosahedronGeometry args={[0.9, 1]} />
-                <meshToonMaterial color={crownColor} />
-            </mesh>
-            <mesh position={[0.95, 2.9, -0.15]} castShadow>
-                <icosahedronGeometry args={[0.95, 1]} />
+            <mesh position={[0, 3.15, 0]} scale={[1.35, 1, 1.15]} castShadow>
+                <icosahedronGeometry args={[1.55, 0]} />
                 <meshToonMaterial color={crownColor} />
             </mesh>
         </group>
@@ -136,25 +114,32 @@ function Bleachers({
     facing: 1 | -1;
     withPressBox?: boolean;
 }) {
+    const geometry = useMemo(() => {
+        const levels = [0, 1, 2, 3, 4].map((level) => {
+            const levelGeometry = new THREE.BoxGeometry(
+                width,
+                0.28 + level * 0.07,
+                1.35,
+            );
+            levelGeometry.translate(
+                0,
+                0.3 + level * 0.48,
+                facing * level * 0.7,
+            );
+            return levelGeometry;
+        });
+        const merged = mergeGeometries(levels, false);
+        levels.forEach((level) => level.dispose());
+        return merged ?? new THREE.BufferGeometry();
+    }, [facing, width]);
+
+    useEffect(() => () => geometry.dispose(), [geometry]);
+
     return (
         <group position={position}>
-            {[0, 1, 2, 3, 4].map((level) => (
-                <mesh
-                    key={level}
-                    position={[0, 0.3 + level * 0.48, facing * level * 0.7]}
-                    castShadow
-                    receiveShadow
-                >
-                    <boxGeometry args={[width, 0.28 + level * 0.07, 1.35]} />
-                    <meshToonMaterial
-                        color={
-                            level % 2
-                                ? STORYBOOK_THEME.bleacher
-                                : STORYBOOK_THEME.bleacherDark
-                        }
-                    />
-                </mesh>
-            ))}
+            <mesh geometry={geometry} castShadow receiveShadow>
+                <meshToonMaterial color={STORYBOOK_THEME.bleacher} />
+            </mesh>
             {withPressBox && (
                 <group position={[0, 5.3, facing * 2.6]}>
                     <mesh castShadow>
