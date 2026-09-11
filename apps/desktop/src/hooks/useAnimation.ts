@@ -9,6 +9,7 @@ import { useCollisionStore } from "@/stores/CollisionStore";
 import { useManyCoordinateData } from "./queries/useCoordinateData";
 import Page from "@/global/classes/Page";
 import { usePerformanceDiagnosticsStore } from "@/stores/PerformanceDiagnosticsStore";
+import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 interface UseAnimationProps {
     canvas: OpenMarchCanvas | null;
@@ -49,7 +50,7 @@ export const useAnimation = ({
     const animationPages = useMemo(
         () =>
             renderedPage
-                ? freezePageUpdates
+                ? isPlaying || freezePageUpdates
                     ? pages
                     : pages.filter(
                           (p) =>
@@ -57,19 +58,45 @@ export const useAnimation = ({
                               PAGE_DELTA,
                       )
                 : [],
-        [freezePageUpdates, pages, renderedPage],
+        [freezePageUpdates, isPlaying, pages, renderedPage],
     );
     const { data: marcherTimelines } = useManyCoordinateData(animationPages);
 
     const animationFrameRef = useRef<number | null>(null);
-    const pendingPageIdRef = useRef<number | null>(null);
+    const wasPlayingRef = useRef(false);
 
     useEffect(() => {
         selectedPageRef.current = selectedPage;
-        if (pendingPageIdRef.current === selectedPage?.id) {
-            pendingPageIdRef.current = null;
-        }
     }, [selectedPage]);
+
+    // Playback has its own tiny page signal so page highlighting can advance
+    // without refreshing every selected-page consumer in the editor.
+    useEffect(() => {
+        const playbackStore = usePlaybackPageStore.getState();
+
+        if (isPlaying) {
+            if (!wasPlayingRef.current) {
+                playbackStore.setPendingSelectionSyncPageId(null);
+                if (!freezePageUpdates) {
+                    playbackStore.setPlaybackPageId(
+                        selectedPageRef.current?.id ?? null,
+                    );
+                }
+            }
+            wasPlayingRef.current = true;
+            return;
+        }
+
+        if (!wasPlayingRef.current) return;
+        wasPlayingRef.current = false;
+
+        const playbackPageId = playbackStore.playbackPageId;
+        const playbackPage = playbackPageId ? pagesById[playbackPageId] : null;
+        if (playbackPage && playbackPage.id !== selectedPageRef.current?.id) {
+            playbackStore.setPendingSelectionSyncPageId(playbackPage.id);
+            setSelectedPage(playbackPage);
+        }
+    }, [freezePageUpdates, isPlaying, pagesById, setSelectedPage]);
 
     // const marcherTimelines = useMemo(() => {
     //     if (
@@ -212,8 +239,8 @@ export const useAnimation = ({
         [canvas, marcherTimelines],
     );
 
-    // Update the selected page based on playback timestamp
-    const updateSelectedPage = useCallback(
+    // Update the lightweight playback page based on the audio timestamp.
+    const updatePlaybackPage = useCallback(
         (currentTime: number) => {
             if (!pages.length) return;
 
@@ -227,28 +254,22 @@ export const useAnimation = ({
                 );
             });
             if (!currentPage) {
-                // We're past the end, set the selected page to the last one and stop playing
+                // We're past the end. The full editor selection synchronizes
+                // after playback stops, outside the animation loop.
                 const lastPage = pages[pages.length - 1];
-                if (
-                    !freezePageUpdates &&
-                    lastPage.id !== selectedPageRef.current?.id &&
-                    lastPage.id !== pendingPageIdRef.current
-                ) {
-                    pendingPageIdRef.current = lastPage.id;
-                    setSelectedPage(lastPage);
+                if (!freezePageUpdates) {
+                    usePlaybackPageStore
+                        .getState()
+                        .setPlaybackPageId(lastPage.id);
                 }
                 setIsPlaying(false);
-            } else if (
-                !freezePageUpdates &&
-                currentPage.id !== selectedPageRef.current?.id &&
-                currentPage.id !== pendingPageIdRef.current
-            ) {
-                // We're on a different page, set the selected page to the current page
-                pendingPageIdRef.current = currentPage.id;
-                setSelectedPage(currentPage);
+            } else if (!freezePageUpdates) {
+                usePlaybackPageStore
+                    .getState()
+                    .setPlaybackPageId(currentPage.id);
             }
         },
-        [freezePageUpdates, pages, pagesById, setSelectedPage, setIsPlaying],
+        [freezePageUpdates, pages, pagesById, setIsPlaying],
     );
 
     // Animate the canvas based on playback timestamp
@@ -262,7 +283,7 @@ export const useAnimation = ({
                 const continueAnimation = renderCanvas
                     ? setMarcherPositionsAtTime(currentTime)
                     : true;
-                updateSelectedPage(currentTime);
+                updatePlaybackPage(currentTime);
                 animationFrameRef.current = requestAnimationFrame(animate);
                 if (!continueAnimation) setIsPlaying(false);
             } catch (e) {
@@ -290,7 +311,7 @@ export const useAnimation = ({
         isPlaying,
         canvas,
         setMarcherPositionsAtTime,
-        updateSelectedPage,
+        updatePlaybackPage,
         marcherTimelines,
         renderCanvas,
         setIsPlaying,

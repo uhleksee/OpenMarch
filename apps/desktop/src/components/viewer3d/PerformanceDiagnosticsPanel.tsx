@@ -106,7 +106,7 @@ export default function PerformanceDiagnosticsPanel({
                                 setFreezePageUpdates(event.target.checked)
                             }
                         />
-                        Freeze editor page updates
+                        Freeze page indicator
                     </label>
                     <label className="flex items-start gap-[8px] leading-[18px]">
                         <input

@@ -61,6 +61,7 @@ import {
     threeDiagnosticSnapshot,
     usePerformanceDiagnosticsStore,
 } from "@/stores/PerformanceDiagnosticsStore";
+import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 const CAMERA_LABELS: Record<CameraPreset, string> = {
     overhead: "Overhead",
@@ -484,6 +485,10 @@ export default function ThreeDViewer() {
     const databaseReady = useDatabaseReady();
     const queryClient = useQueryClient();
     const { selectedPage } = useSelectedPage()!;
+    const { isPlaying } = useIsPlaying()!;
+    const playbackPageId = usePlaybackPageStore(
+        (state) => state.playbackPageId,
+    );
     const { pages } = useTimingObjects();
     const { uiSettings } = useUiSettingsStore();
     const diagnosticsEnabled = usePerformanceDiagnosticsStore(
@@ -492,16 +497,20 @@ export default function ThreeDViewer() {
     const diagnosticSceneMode = usePerformanceDiagnosticsStore(
         (state) => state.sceneMode,
     );
+    const activePageId =
+        isPlaying && playbackPageId !== null
+            ? playbackPageId
+            : selectedPage?.id;
     const { data: fieldProperties } = useQuery(
         fieldPropertiesQueryOptions(databaseReady),
     );
     const { data: marchers = [] } = useQuery(allMarchersQueryOptions());
     const { data: marcherPages = {} } = useQuery({
-        ...marcherPagesByPageQueryOptions(selectedPage?.id),
+        ...marcherPagesByPageQueryOptions(activePageId),
         placeholderData: keepPreviousData,
     });
     const { data: marcherAppearances = {} } = useQuery({
-        ...marcherAppearancesQueryOptions(selectedPage?.id, queryClient),
+        ...marcherAppearancesQueryOptions(activePageId, queryClient),
         placeholderData: keepPreviousData,
     });
     const { data: marcherTimelines } = useManyCoordinateData(pages);

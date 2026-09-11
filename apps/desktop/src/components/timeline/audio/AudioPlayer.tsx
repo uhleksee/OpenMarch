@@ -25,6 +25,7 @@ import {
     type PlaybackStartInfo,
 } from "./playbackTiming";
 import { usePerformanceDiagnosticsStore } from "@/stores/PerformanceDiagnosticsStore";
+import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 export const waveColor = "rgb(180, 180, 180)";
 export const lightProgressColor = "rgb(100, 66, 255)";
@@ -340,6 +341,12 @@ export default function AudioPlayer() {
     // Sync audio and store playback position with the selected page
     useEffect(() => {
         if (!selectedPage || isPlaying) return;
+
+        const playbackStore = usePlaybackPageStore.getState();
+        if (playbackStore.pendingSelectionSyncPageId === selectedPage.id) {
+            playbackStore.setPendingSelectionSyncPageId(null);
+            return;
+        }
 
         setPlaybackTimestamp(getPausedPlaybackSeconds(selectedPage));
     }, [selectedPage, isPlaying, setPlaybackTimestamp]);

@@ -25,6 +25,7 @@ import {
     useCreateLastPageOnTimeline,
 } from "./PageTimeline.utils";
 import { workspaceSettingsQueryOptions } from "@/hooks/queries/useWorkspaceSettings";
+import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 // eslint-disable-next-line max-lines-per-function
 export default function PageTimeline() {
@@ -32,6 +33,9 @@ export default function PageTimeline() {
     const { uiSettings } = useUiSettingsStore();
     const { isPlaying } = useIsPlaying()!;
     const { selectedPage, setSelectedPage } = useSelectedPage()!;
+    const playbackPageId = usePlaybackPageStore(
+        (state) => state.playbackPageId,
+    );
     const { setSelectedShapePageIds } = useSelectionStore()!;
     const { isFullscreen } = useFullscreenStore();
     const { pages, beats } = useTimingObjects()!;
@@ -62,6 +66,11 @@ export default function PageTimeline() {
         workspaceSettingsQueryOptions(),
     );
     const { t } = useTolgee();
+    const activePageId =
+        isPlaying && playbackPageId !== null
+            ? playbackPageId
+            : selectedPage?.id;
+    const activePageIndex = pages.findIndex((page) => page.id === activePageId);
 
     // Calculate the width of a page based on its duration
     // Add a small buffer to ensure the page visually includes all its beats
@@ -282,7 +291,7 @@ export default function PageTimeline() {
                         className={clsx(
                             "rounded-l-6 bg-fg-2 flex h-full w-[40px] items-center justify-center border px-10 py-4 font-mono",
                             !isPlaying && "cursor-pointer",
-                            pages[0].id === selectedPage?.id
+                            pages[0].id === activePageId
                                 ? [
                                       "border-accent",
                                       isPlaying &&
@@ -310,9 +319,6 @@ export default function PageTimeline() {
                 {pages.map((page, index) => {
                     if (index === 0) return null;
                     const width = getWidth(page);
-                    const selectedIndex = pages.findIndex(
-                        (p) => p.id === selectedPage?.id,
-                    );
                     return (
                         <ContextMenu.Root
                             key={index}
@@ -333,7 +339,7 @@ export default function PageTimeline() {
                                         className={clsx(
                                             "bg-fg-2 text-body text-text group-last:rounded-r-6 relative flex h-full items-center justify-end overflow-clip border px-8 py-4 font-mono",
                                             !isPlaying && "cursor-pointer",
-                                            page.id === selectedPage?.id
+                                            page.id === activePageId
                                                 ? [
                                                       "border-accent",
                                                       isPlaying &&
@@ -355,8 +361,8 @@ export default function PageTimeline() {
                                             {page.name}
                                         </div>
                                         {/* ------ progress bar (fullscreen) ------ */}
-                                        {(selectedIndex === index - 1 ||
-                                            (selectedIndex === 0 &&
+                                        {(activePageIndex === index - 1 ||
+                                            (activePageIndex === 0 &&
                                                 index === pages.length)) &&
                                             isPlaying && (
                                                 <div

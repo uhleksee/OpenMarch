@@ -19,21 +19,29 @@ import PerspectiveSlider from "./PerspectiveSlider";
 import PageTimeline from "./PageTimeline";
 import { T } from "@tolgee/react";
 import clsx from "clsx";
+import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 export default function TimelineContainer() {
     const { isPlaying } = useIsPlaying()!;
     const { measures } = useTimingObjects()!;
     const { selectedPage } = useSelectedPage()!;
+    const playbackPageId = usePlaybackPageStore(
+        (state) => state.playbackPageId,
+    );
     const { uiSettings } = useUiSettingsStore();
     const { isFullscreen } = useFullscreenStore();
     const timelineRef = useRef<HTMLDivElement>(null);
+    const activePageId =
+        isPlaying && playbackPageId !== null
+            ? playbackPageId
+            : selectedPage?.id;
 
     useEffect(() => {
-        if (!selectedPage) return;
+        if (activePageId == null) return;
 
         const container = timelineRef.current;
         const selectedPageElement = document.querySelector(
-            `[timeline-page-id="${selectedPage.id}"]`,
+            `[timeline-page-id="${activePageId}"]`,
         );
 
         if (!container || !selectedPageElement) return;
@@ -65,7 +73,7 @@ export default function TimelineContainer() {
             container.style.scrollBehavior = "smooth";
             container.style.transition = "";
         };
-    }, [selectedPage, isPlaying]);
+    }, [activePageId, isPlaying]);
 
     // Rerender the timeline when the measures or pages change
     useEffect(() => {
