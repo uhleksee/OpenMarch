@@ -55,14 +55,19 @@ export default function TimelineContainer() {
         if (!isPlaying) return;
 
         let updateFrame = 0;
+        let scrollFrame = 0;
+        let scrollDelay = 0;
         let activeHighlight: HTMLElement | null = null;
         let activeProgress: HTMLElement | null = null;
+        const timeline = timelineRef.current;
+        const timelineRect = timeline?.getBoundingClientRect();
         const pageElements = new Map<
             number,
             {
                 highlight: HTMLElement | null;
                 progress: HTMLElement | null;
                 destinationDuration: number | null;
+                scrollLeft: number | null;
             }
         >();
 
@@ -82,10 +87,21 @@ export default function TimelineContainer() {
             const progress = destinationContainer?.querySelector(
                 "[data-playback-progress]",
             );
+            const containerRect =
+                container instanceof HTMLElement
+                    ? container.getBoundingClientRect()
+                    : null;
             pageElements.set(page.id, {
                 highlight: highlight instanceof HTMLElement ? highlight : null,
                 progress: progress instanceof HTMLElement ? progress : null,
                 destinationDuration: destination?.duration ?? null,
+                scrollLeft:
+                    timeline && timelineRect && containerRect
+                        ? containerRect.left +
+                          timeline.scrollLeft -
+                          timelineRect.left -
+                          (timelineRect.width - containerRect.width) / 2
+                        : null,
             });
         });
 
@@ -135,6 +151,19 @@ export default function TimelineContainer() {
                     },
                 );
             }
+
+            if (timeline && elements.scrollLeft != null) {
+                window.clearTimeout(scrollDelay);
+                cancelAnimationFrame(scrollFrame);
+                scrollDelay = window.setTimeout(() => {
+                    scrollFrame = requestAnimationFrame(() => {
+                        timeline.scrollTo({
+                            left: elements.scrollLeft ?? 0,
+                            behavior: "smooth",
+                        });
+                    });
+                }, 72);
+            }
         };
 
         const schedulePlaybackPage = (pageId: number | null) => {
@@ -154,9 +183,11 @@ export default function TimelineContainer() {
         return () => {
             unsubscribe();
             cancelAnimationFrame(updateFrame);
+            cancelAnimationFrame(scrollFrame);
+            window.clearTimeout(scrollDelay);
             clearPlaybackDecorations();
         };
-    }, [isPlaying, pages]);
+    }, [isPlaying, pages, uiSettings.timelinePixelsPerSecond]);
 
     // Rerender the timeline when the measures or pages change
     useEffect(() => {
