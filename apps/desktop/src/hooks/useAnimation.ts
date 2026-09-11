@@ -214,7 +214,7 @@ export const useAnimation = ({
     // Update the selected page based on playback timestamp
     const updateSelectedPage = useCallback(
         async (currentTime: number) => {
-            if (!pages.length || !canvas) return;
+            if (!pages.length) return;
 
             const currentPage = pages.find((p) => {
                 const nextPage = p.nextPageId ? pagesById[p.nextPageId] : null;
@@ -229,17 +229,15 @@ export const useAnimation = ({
                 // We're past the end, set the selected page to the last one and stop playing
                 const lastPage = pages[pages.length - 1];
                 if (lastPage.id !== selectedPageRef.current?.id) {
-                    selectedPageRef.current = lastPage;
                     startTransition(() => setSelectedPage(lastPage));
                 }
                 setIsPlaying(false);
             } else if (currentPage.id !== selectedPageRef.current?.id) {
                 // We're on a different page, set the selected page to the current page
-                selectedPageRef.current = currentPage;
                 startTransition(() => setSelectedPage(currentPage));
             }
         },
-        [pages, canvas, pagesById, setSelectedPage, setIsPlaying],
+        [pages, pagesById, setSelectedPage, setIsPlaying],
     );
 
     // Animate the canvas based on playback timestamp

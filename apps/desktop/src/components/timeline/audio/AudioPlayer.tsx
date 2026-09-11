@@ -20,23 +20,20 @@ import { workspaceSettingsQueryOptions } from "@/hooks/queries/useWorkspaceSetti
 import AudioOffsetWorker from "@/workers/audioOffset.worker.ts?worker";
 import { CircleNotchIcon } from "@phosphor-icons/react";
 import type Page from "@/global/classes/Page";
+import {
+    calculateLivePlaybackSeconds,
+    type PlaybackStartInfo,
+} from "./playbackTiming";
 
 export const waveColor = "rgb(180, 180, 180)";
 export const lightProgressColor = "rgb(100, 66, 255)";
 export const darkProgressColor = "rgb(150, 126, 255)";
-const PLAYBACK_DELAY = 0.1; // Delay in seconds to start playback
+const PLAYBACK_DELAY = 0.02; // Small scheduling buffer for reliable Web Audio starts
 const WAVEFORM_HEIGHT = 60;
 
 // Helper function to adjust volume based on percentage
 function volumeAdjustment(volume: number): number {
     return (volume * 2.0) / 100.0;
-}
-
-// Playback start info interface
-interface PlaybackStartInfo {
-    playStartTime: number;
-    startTimestamp: number;
-    pageDuration: number;
 }
 
 // Global reference to store playback start info, used for calculating live playback position
@@ -70,14 +67,9 @@ export const getLivePlaybackPosition = (): number => {
         return 0;
     }
 
-    const { playStartTime, startTimestamp, pageDuration } =
-        playbackStartInfoRef.current;
-    return (
-        startTimestamp +
-        pageDuration +
-        (audioContextRef.currentTime - playStartTime) +
-        PLAYBACK_DELAY +
-        0.01
+    return calculateLivePlaybackSeconds(
+        audioContextRef.currentTime,
+        playbackStartInfoRef.current,
     );
 };
 

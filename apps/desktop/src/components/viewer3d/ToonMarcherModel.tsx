@@ -5,6 +5,27 @@ import { useIsPlaying } from "@/context/IsPlayingContext";
 import { SKIN_TONES, STORYBOOK_THEME } from "./sceneTheme";
 import type { MarcherModelProps } from "./Marcher3D";
 
+const CONTACT_SHADOW_GEOMETRY = new THREE.CircleGeometry(0.82, 24);
+const CONTACT_SHADOW_MATERIAL = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+        varying vec2 shadowUv;
+        void main() {
+            shadowUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        varying vec2 shadowUv;
+        void main() {
+            float distanceFromCenter = distance(shadowUv, vec2(0.5));
+            float alpha = (1.0 - smoothstep(0.12, 0.5, distanceFromCenter)) * 0.34;
+            gl_FragColor = vec4(0.035, 0.075, 0.055, alpha);
+        }
+    `,
+});
+
 const getVariation = (seed: number) => {
     const normalizedSeed = Math.abs(seed * 9301 + 49297) % 233280;
     const random = normalizedSeed / 233280;
@@ -102,19 +123,14 @@ export default function ToonMarcherModel({
     return (
         <group>
             <mesh
-                position={[0, 0.018, 0]}
+                position={[0.24, 0.024, 0.3]}
                 rotation={[-Math.PI / 2, 0, 0]}
-                scale={[1, 0.58, 1]}
+                scale={[1.28, 0.68, 1]}
                 renderOrder={-1}
-            >
-                <circleGeometry args={[0.72, 16]} />
-                <meshBasicMaterial
-                    color={STORYBOOK_THEME.shadow}
-                    transparent
-                    opacity={0.2}
-                    depthWrite={false}
-                />
-            </mesh>
+                geometry={CONTACT_SHADOW_GEOMETRY}
+                material={CONTACT_SHADOW_MATERIAL}
+                dispose={null}
+            ></mesh>
 
             <group ref={rootRef} scale={[1, variation.height, 1]}>
                 <group ref={lowerBodyRef}>

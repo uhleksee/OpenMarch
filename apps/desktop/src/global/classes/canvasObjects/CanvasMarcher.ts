@@ -660,13 +660,13 @@ export default class CanvasMarcher
     /**
      * Updates the position of the text label to follow the dot.
      */
-    updateTextLabelPosition() {
+    updateTextLabelPosition(updateBounds = true) {
         const absoluteCoords = this.getAbsoluteCoords();
         this.textLabel.set({
             left: absoluteCoords.x,
             top: absoluteCoords.y - CanvasMarcher.dotRadius * 2.2,
         });
-        this.textLabel.setCoords();
+        if (updateBounds) this.textLabel.setCoords();
     }
 
     /**
@@ -757,8 +757,9 @@ export default class CanvasMarcher
         this.left = newCanvasCoords.x;
         this.top = newCanvasCoords.y;
 
-        this.updateTextLabelPosition();
-        this.setCoords();
+        // Playback is view-only, so Fabric's expensive interaction bounds do
+        // not need to be rebuilt for every marcher on every animation frame.
+        this.updateTextLabelPosition(false);
     }
 
     /**

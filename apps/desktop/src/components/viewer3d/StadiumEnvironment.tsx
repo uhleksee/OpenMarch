@@ -199,7 +199,7 @@ function LightPole({
                 rotation={[0.2 * face, 0, 0]}
                 castShadow
             >
-                <boxGeometry args={[1.8, 0.45, 0.22]} />
+                <boxGeometry args={[3.2, 0.68, 0.32]} />
                 <meshToonMaterial
                     color={STORYBOOK_THEME.uniformLight}
                     emissive={lightingMode === "night" ? "#dff2ff" : "#000000"}
@@ -210,9 +210,9 @@ function LightPole({
                 <pointLight
                     position={[0, height - 0.4, face * 0.5]}
                     color="#d9ecff"
-                    intensity={2.2}
-                    distance={height * 4.5}
-                    decay={1.7}
+                    intensity={160}
+                    distance={height * 5.5}
+                    decay={1.5}
                 />
             )}
         </group>
@@ -287,7 +287,7 @@ export default function StadiumEnvironment({
                             0,
                             zFactor * (fieldDepth / 2 + 7),
                         ]}
-                        height={largestDimension * 0.09}
+                        height={largestDimension * 0.13}
                         face={zFactor === 1 ? -1 : 1}
                         lightingMode={lightingMode}
                     />
