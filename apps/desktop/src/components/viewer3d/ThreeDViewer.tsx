@@ -462,10 +462,10 @@ export default function ThreeDViewer() {
         <div className="bg-bg-2 rounded-6 relative h-full w-full overflow-hidden">
             <ThreeCanvas
                 shadows="percentage"
-                dpr={[1, 1.5]}
+                dpr={1}
                 performance={{ min: 0.6 }}
                 gl={{
-                    antialias: true,
+                    antialias: false,
                     alpha: false,
                     powerPreference: "high-performance",
                 }}

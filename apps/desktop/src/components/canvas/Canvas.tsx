@@ -562,35 +562,6 @@ export default function Canvas({
         }
     }, [activeCanvas, isPlaying, selectedPage]);
 
-    // This effect ensures that when the animation is paused, the marchers are
-    // rendered at their final positions for the selected page.
-    useEffect(() => {
-        if (
-            activeCanvas &&
-            !isPlaying &&
-            selectedPage &&
-            marcherPagesLoaded &&
-            marcherVisuals != null
-        ) {
-            activeCanvas
-                .renderMarchers({
-                    marcherPages: marcherPages,
-                    marcherVisuals: marcherVisuals,
-                })
-                .catch((error) => {
-                    console.error("Error rendering marchers", error);
-                });
-        }
-    }, [
-        activeCanvas,
-        isPlaying,
-        selectedPage,
-        marcherPages,
-        marchers,
-        marcherVisuals,
-        marcherPagesLoaded,
-    ]);
-
     // Render collision markers when paused
     useEffect(() => {
         if (!activeCanvas) return;

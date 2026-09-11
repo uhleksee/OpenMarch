@@ -1,10 +1,4 @@
-import {
-    startTransition,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
 import { getCoordinatesAtTime } from "@/utilities/Keyframes";
@@ -60,9 +54,13 @@ export const useAnimation = ({
     const { data: marcherTimelines } = useManyCoordinateData(animationPages);
 
     const animationFrameRef = useRef<number | null>(null);
+    const pendingPageIdRef = useRef<number | null>(null);
 
     useEffect(() => {
         selectedPageRef.current = selectedPage;
+        if (pendingPageIdRef.current === selectedPage?.id) {
+            pendingPageIdRef.current = null;
+        }
     }, [selectedPage]);
 
     // const marcherTimelines = useMemo(() => {
@@ -213,7 +211,7 @@ export const useAnimation = ({
 
     // Update the selected page based on playback timestamp
     const updateSelectedPage = useCallback(
-        async (currentTime: number) => {
+        (currentTime: number) => {
             if (!pages.length) return;
 
             const currentPage = pages.find((p) => {
@@ -228,13 +226,21 @@ export const useAnimation = ({
             if (!currentPage) {
                 // We're past the end, set the selected page to the last one and stop playing
                 const lastPage = pages[pages.length - 1];
-                if (lastPage.id !== selectedPageRef.current?.id) {
-                    startTransition(() => setSelectedPage(lastPage));
+                if (
+                    lastPage.id !== selectedPageRef.current?.id &&
+                    lastPage.id !== pendingPageIdRef.current
+                ) {
+                    pendingPageIdRef.current = lastPage.id;
+                    setSelectedPage(lastPage);
                 }
                 setIsPlaying(false);
-            } else if (currentPage.id !== selectedPageRef.current?.id) {
+            } else if (
+                currentPage.id !== selectedPageRef.current?.id &&
+                currentPage.id !== pendingPageIdRef.current
+            ) {
                 // We're on a different page, set the selected page to the current page
-                startTransition(() => setSelectedPage(currentPage));
+                pendingPageIdRef.current = currentPage.id;
+                setSelectedPage(currentPage);
             }
         },
         [pages, pagesById, setSelectedPage, setIsPlaying],
@@ -251,7 +257,7 @@ export const useAnimation = ({
                 const continueAnimation = renderCanvas
                     ? setMarcherPositionsAtTime(currentTime)
                     : true;
-                void updateSelectedPage(currentTime);
+                updateSelectedPage(currentTime);
                 animationFrameRef.current = requestAnimationFrame(animate);
                 if (!continueAnimation) setIsPlaying(false);
             } catch (e) {
