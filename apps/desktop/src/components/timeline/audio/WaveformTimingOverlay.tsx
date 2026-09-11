@@ -1,4 +1,5 @@
 import React, {
+    startTransition,
     useCallback,
     useEffect,
     useMemo,
@@ -27,12 +28,21 @@ interface VisibleRange {
 }
 
 const BEAT_HEIGHT_RATIO = 0.35;
+const VIEWPORT_OVERSCAN = 1.5;
+const VIEWPORT_GUARD = 0.35;
 
 const hasRehearsalMark = (measure: Measure) =>
     !!measure.rehearsalMark && measure.rehearsalMark.trim().length > 0;
 
 const clamp = (value: number, min: number, max: number) =>
     Math.min(Math.max(value, min), max);
+
+interface RenderedPixelRange {
+    start: number;
+    end: number;
+    overlayContentLeft: number;
+    viewportWidth: number;
+}
 
 export default function WaveformTimingOverlay({
     beats,
@@ -44,6 +54,7 @@ export default function WaveformTimingOverlay({
     width,
 }: WaveformTimingOverlayProps) {
     const overlayRef = useRef<HTMLDivElement>(null);
+    const renderedPixelRangeRef = useRef<RenderedPixelRange | null>(null);
     const [visibleRange, setVisibleRange] = useState<VisibleRange>({
         start: 0,
         end: duration,
@@ -77,19 +88,32 @@ export default function WaveformTimingOverlay({
         }
 
         const viewWidth = visibleRight - visibleLeft;
-        const startPx = clamp(visibleLeft - overlayRect.left, 0, width);
-        const endPx = clamp(startPx + viewWidth, 0, width);
+        const visibleStartPx = clamp(visibleLeft - overlayRect.left, 0, width);
+        const visibleEndPx = clamp(visibleStartPx + viewWidth, 0, width);
+        const overscanPx = viewWidth * VIEWPORT_OVERSCAN;
+        const startPx = clamp(visibleStartPx - overscanPx, 0, width);
+        const endPx = clamp(visibleEndPx + overscanPx, 0, width);
+
+        renderedPixelRangeRef.current = {
+            start: startPx,
+            end: endPx,
+            overlayContentLeft:
+                overlayRect.left - containerRect.left + container.scrollLeft,
+            viewportWidth: containerRect.width,
+        };
 
         const newRange: VisibleRange = {
             start: clamp(startPx / pxPerSecond, 0, duration),
             end: clamp(endPx / pxPerSecond, 0, duration),
         };
 
-        setVisibleRange((prev) =>
-            prev.start === newRange.start && prev.end === newRange.end
-                ? prev
-                : newRange,
-        );
+        startTransition(() => {
+            setVisibleRange((prev) =>
+                prev.start === newRange.start && prev.end === newRange.end
+                    ? prev
+                    : newRange,
+            );
+        });
     }, [duration, pxPerSecond, width]);
 
     useEffect(() => {
@@ -108,10 +132,39 @@ export default function WaveformTimingOverlay({
         const container = document.getElementById("timeline");
         if (!container) return;
 
-        const handleScroll = () => updateVisibleRange();
+        let rangeUpdateFrame = 0;
+
+        const scheduleRangeUpdate = () => {
+            if (rangeUpdateFrame) return;
+            rangeUpdateFrame = requestAnimationFrame(() => {
+                rangeUpdateFrame = 0;
+                updateVisibleRange();
+            });
+        };
+
+        const handleScroll = () => {
+            const renderedRange = renderedPixelRangeRef.current;
+            if (!renderedRange) return;
+
+            // The ordinary playback scroll remains entirely inside the
+            // buffered marker window, so it does no React or layout work.
+            // A large manual jump refreshes only when it approaches an edge.
+            const viewportStart =
+                container.scrollLeft - renderedRange.overlayContentLeft;
+            const viewportEnd = viewportStart + renderedRange.viewportWidth;
+            const guard = renderedRange.viewportWidth * VIEWPORT_GUARD;
+            const hasLeftBuffer =
+                renderedRange.start <= 0 ||
+                viewportStart >= renderedRange.start + guard;
+            const hasRightBuffer =
+                renderedRange.end >= width ||
+                viewportEnd <= renderedRange.end - guard;
+
+            if (!hasLeftBuffer || !hasRightBuffer) scheduleRangeUpdate();
+        };
         const handleResize = () => updateVisibleRange();
 
-        container.addEventListener("scroll", handleScroll);
+        container.addEventListener("scroll", handleScroll, { passive: true });
         window.addEventListener("resize", handleResize);
 
         // Initial calculation to sync with current viewport
@@ -120,6 +173,7 @@ export default function WaveformTimingOverlay({
         return () => {
             container.removeEventListener("scroll", handleScroll);
             window.removeEventListener("resize", handleResize);
+            cancelAnimationFrame(rangeUpdateFrame);
         };
     }, [pxPerSecond, updateVisibleRange, width]);
 
