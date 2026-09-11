@@ -55,6 +55,7 @@ export default function TimelineContainer() {
         if (!isPlaying) return;
 
         let updateFrame = 0;
+        let scrollFrame = 0;
 
         const clearPlaybackDecorations = () => {
             const highlighted = document.querySelector(
@@ -72,7 +73,10 @@ export default function TimelineContainer() {
             if (progress instanceof HTMLElement) {
                 progress.dataset.playbackProgressActive = "false";
                 progress.classList.add("hidden");
-                progress.style.animation = "none";
+                progress.getAnimations().forEach((animation) => {
+                    animation.cancel();
+                });
+                progress.style.transform = "";
             }
         };
 
@@ -104,22 +108,34 @@ export default function TimelineContainer() {
                 if (progress instanceof HTMLElement) {
                     progress.dataset.playbackProgressActive = "true";
                     progress.classList.remove("hidden");
-                    progress.style.animation = "none";
-                    void progress.offsetWidth;
-                    progress.style.animation = `progress ${destinationPage.duration}s linear forwards`;
+                    progress.style.transformOrigin = "left center";
+                    progress.animate(
+                        [
+                            { transform: "scaleX(0)" },
+                            { transform: "scaleX(1)" },
+                        ],
+                        {
+                            duration: destinationPage.duration * 1000,
+                            easing: "linear",
+                            fill: "forwards",
+                        },
+                    );
                 }
             }
 
             const timeline = timelineRef.current;
             if (!timeline || !(pageContainer instanceof HTMLElement)) return;
-            timeline.style.scrollBehavior = "auto";
-            const timelineRect = timeline.getBoundingClientRect();
-            const pageRect = pageContainer.getBoundingClientRect();
-            timeline.scrollLeft =
-                pageRect.left +
-                timeline.scrollLeft -
-                timelineRect.left -
-                (timelineRect.width - pageRect.width) / 2;
+            // Let the boundary frame paint before asking the browser to center
+            // the next page. This keeps layout work out of the audio clock's
+            // critical transition frame.
+            cancelAnimationFrame(scrollFrame);
+            scrollFrame = requestAnimationFrame(() => {
+                pageContainer.scrollIntoView({
+                    block: "nearest",
+                    inline: "center",
+                    behavior: "auto",
+                });
+            });
         };
 
         const schedulePlaybackPage = (pageId: number | null) => {
@@ -139,6 +155,7 @@ export default function TimelineContainer() {
         return () => {
             unsubscribe();
             cancelAnimationFrame(updateFrame);
+            cancelAnimationFrame(scrollFrame);
             clearPlaybackDecorations();
         };
     }, [isPlaying, pages]);

@@ -76,6 +76,50 @@ function Cloud({
     );
 }
 
+function CelestialBody({
+    fieldWidth,
+    fieldDepth,
+    lightingMode,
+}: StadiumEnvironmentProps) {
+    const largestDimension = Math.max(fieldWidth, fieldDepth);
+    const isNight = lightingMode === "night";
+    const isSunset = lightingMode === "sunset";
+    const color = isNight ? "#dceaff" : isSunset ? "#ffad67" : "#fff0bf";
+    const position: [number, number, number] = isNight
+        ? [fieldWidth * 0.58, largestDimension * 0.58, -fieldDepth * 1.9]
+        : [
+              -fieldWidth * (isSunset ? 0.62 : 0.48),
+              largestDimension * (isSunset ? 0.24 : 0.62),
+              -fieldDepth * 1.9,
+          ];
+    const radius = largestDimension * (isSunset ? 0.055 : 0.043);
+
+    return (
+        <group position={position}>
+            <mesh>
+                <sphereGeometry args={[radius, 16, 10]} />
+                <meshBasicMaterial
+                    color={color}
+                    fog={false}
+                    toneMapped={false}
+                />
+            </mesh>
+            <mesh scale={isNight ? 1.8 : 2.35}>
+                <sphereGeometry args={[radius, 12, 8]} />
+                <meshBasicMaterial
+                    color={color}
+                    transparent
+                    opacity={isNight ? 0.07 : 0.09}
+                    depthWrite={false}
+                    blending={THREE.AdditiveBlending}
+                    fog={false}
+                    toneMapped={false}
+                />
+            </mesh>
+        </group>
+    );
+}
+
 function Tree({
     position,
     scale,
@@ -261,15 +305,34 @@ function StadiumLightTower({
                 />
             </mesh>
             {lightingMode === "night" && (
-                <spotLight
-                    position={[0, height + 0.2, face * 0.8]}
-                    color="#d9ecff"
-                    intensity={420}
-                    distance={height * 6}
-                    decay={1.35}
-                    angle={0.62}
-                    penumbra={0.72}
-                />
+                <>
+                    <mesh
+                        position={[0, height + 0.15, face * 0.42]}
+                        rotation={[0.12 * face, 0, 0]}
+                    >
+                        <planeGeometry
+                            args={[panelWidth * 1.22, panelHeight * 1.5]}
+                        />
+                        <meshBasicMaterial
+                            color="#cfe8ff"
+                            transparent
+                            opacity={0.12}
+                            depthWrite={false}
+                            blending={THREE.AdditiveBlending}
+                            side={THREE.DoubleSide}
+                            toneMapped={false}
+                        />
+                    </mesh>
+                    <spotLight
+                        position={[0, height + 0.2, face * 0.8]}
+                        color="#d9ecff"
+                        intensity={420}
+                        distance={height * 6}
+                        decay={1.35}
+                        angle={0.62}
+                        penumbra={0.72}
+                    />
+                </>
             )}
         </group>
     );
@@ -293,6 +356,11 @@ export default function StadiumEnvironment({
         <group>
             <StorybookSky
                 radius={largestDimension * 5}
+                lightingMode={lightingMode}
+            />
+            <CelestialBody
+                fieldWidth={fieldWidth}
+                fieldDepth={fieldDepth}
                 lightingMode={lightingMode}
             />
 

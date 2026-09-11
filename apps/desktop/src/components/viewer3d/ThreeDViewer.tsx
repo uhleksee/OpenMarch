@@ -51,7 +51,7 @@ import { MarcherTimeline } from "@/utilities/Keyframes";
 import { MarcherAppearanceByIdMap } from "@/hooks/queries/useMarcherAppearances";
 import LightingRig from "./LightingRig";
 import StadiumEnvironment from "./StadiumEnvironment";
-import { LIGHTING_THEMES, STORYBOOK_RENDERING } from "./sceneTheme";
+import { CINEMATIC_OVERLAYS, LIGHTING_THEMES } from "./sceneTheme";
 import {
     DEFAULT_VIEWER_3D_PREFERENCES,
     type LightingMode,
@@ -304,8 +304,8 @@ const StaticFieldScene = memo(function StaticFieldScene({
                 attach="fog"
                 args={[
                     lighting.skyHorizon,
-                    fieldWidth * STORYBOOK_RENDERING.fogNearFactor,
-                    fieldWidth * STORYBOOK_RENDERING.fogFarFactor,
+                    fieldWidth * lighting.fogNearFactor,
+                    fieldWidth * lighting.fogFarFactor,
                 ]}
             />
             <LightingRig
@@ -605,6 +605,12 @@ export default function ThreeDViewer() {
                 />
                 {diagnosticsEnabled && <PerformanceSampler />}
             </ThreeCanvas>
+
+            <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-[5]"
+                style={CINEMATIC_OVERLAYS[preferences.lightingMode]}
+            />
 
             <div className="absolute top-6 right-6 z-10 flex max-w-[calc(100%_-_3rem)] flex-col items-end gap-3">
                 <div

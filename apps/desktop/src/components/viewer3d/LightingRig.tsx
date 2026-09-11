@@ -59,9 +59,9 @@ export default function LightingRig({
             <directionalLight
                 color={lighting.key}
                 position={[
-                    -fieldWidth * 0.48,
+                    fieldWidth * lighting.sunX,
                     largestDimension * lighting.sunHeight,
-                    fieldDepth * 0.72,
+                    fieldDepth * lighting.sunZ,
                 ]}
                 intensity={lighting.keyIntensity}
                 castShadow
@@ -75,6 +75,15 @@ export default function LightingRig({
                 shadow-camera-bottom={-fieldDepth * 1.15}
                 shadow-normalBias={0.025}
                 shadow-bias={-0.00025}
+            />
+            <directionalLight
+                color={lighting.rim}
+                position={[
+                    -fieldWidth * lighting.sunX,
+                    largestDimension * 0.34,
+                    -fieldDepth * lighting.sunZ,
+                ]}
+                intensity={lighting.rimIntensity}
             />
         </>
     );

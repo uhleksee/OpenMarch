@@ -27,12 +27,6 @@ export const STORYBOOK_THEME = {
     shadow: "#15291f",
 } as const;
 
-export const STORYBOOK_RENDERING = {
-    exposure: 1.08,
-    fogNearFactor: 1.25,
-    fogFarFactor: 4.2,
-} as const;
-
 export const LIGHTING_THEMES = {
     day: {
         skyTop: STORYBOOK_THEME.skyTop,
@@ -43,8 +37,14 @@ export const LIGHTING_THEMES = {
         ambientIntensity: 0.72,
         hemisphereIntensity: 1.18,
         keyIntensity: 2.7,
+        rim: "#a9d8ff",
+        rimIntensity: 0.34,
         exposure: 1.08,
         sunHeight: 0.68,
+        sunX: -0.48,
+        sunZ: 0.72,
+        fogNearFactor: 1.35,
+        fogFarFactor: 4.4,
     },
     sunset: {
         skyTop: "#53658f",
@@ -55,8 +55,14 @@ export const LIGHTING_THEMES = {
         ambientIntensity: 0.55,
         hemisphereIntensity: 0.82,
         keyIntensity: 3.15,
+        rim: "#718bc7",
+        rimIntensity: 0.62,
         exposure: 0.98,
-        sunHeight: 0.42,
+        sunHeight: 0.27,
+        sunX: -0.72,
+        sunZ: 0.56,
+        fogNearFactor: 1.05,
+        fogFarFactor: 3.75,
     },
     night: {
         skyTop: "#071426",
@@ -67,8 +73,29 @@ export const LIGHTING_THEMES = {
         ambientIntensity: 0.28,
         hemisphereIntensity: 0.48,
         keyIntensity: 1.15,
+        rim: "#5f86c9",
+        rimIntensity: 0.45,
         exposure: 0.78,
         sunHeight: 0.72,
+        sunX: 0.56,
+        sunZ: -0.48,
+        fogNearFactor: 1.15,
+        fogFarFactor: 3.7,
+    },
+} as const;
+
+export const CINEMATIC_OVERLAYS = {
+    day: {
+        background:
+            "radial-gradient(ellipse at center, transparent 55%, rgba(18, 35, 31, 0.2) 100%), linear-gradient(180deg, rgba(255, 225, 174, 0.045), transparent 42%)",
+    },
+    sunset: {
+        background:
+            "radial-gradient(ellipse at center, transparent 48%, rgba(28, 22, 39, 0.3) 100%), linear-gradient(115deg, rgba(255, 133, 74, 0.12), transparent 46%, rgba(62, 85, 145, 0.1))",
+    },
+    night: {
+        background:
+            "radial-gradient(ellipse at center, transparent 46%, rgba(1, 8, 20, 0.42) 100%), linear-gradient(180deg, rgba(78, 115, 174, 0.08), transparent 48%)",
     },
 } as const;
 
