@@ -33,6 +33,45 @@ export const STORYBOOK_RENDERING = {
     fogFarFactor: 4.2,
 } as const;
 
+export const LIGHTING_THEMES = {
+    day: {
+        skyTop: STORYBOOK_THEME.skyTop,
+        skyHorizon: STORYBOOK_THEME.skyHorizon,
+        ambient: "#eaf3e9",
+        ground: STORYBOOK_THEME.grassOutside,
+        key: STORYBOOK_THEME.sun,
+        ambientIntensity: 0.72,
+        hemisphereIntensity: 1.18,
+        keyIntensity: 2.7,
+        exposure: 1.08,
+        sunHeight: 0.68,
+    },
+    sunset: {
+        skyTop: "#53658f",
+        skyHorizon: "#f0a06d",
+        ambient: "#d8b2a4",
+        ground: "#526f5b",
+        key: "#ff9854",
+        ambientIntensity: 0.55,
+        hemisphereIntensity: 0.82,
+        keyIntensity: 3.15,
+        exposure: 0.98,
+        sunHeight: 0.42,
+    },
+    night: {
+        skyTop: "#071426",
+        skyHorizon: "#263b55",
+        ambient: "#7891b5",
+        ground: "#263c35",
+        key: "#b9d7ff",
+        ambientIntensity: 0.28,
+        hemisphereIntensity: 0.48,
+        keyIntensity: 1.15,
+        exposure: 0.78,
+        sunHeight: 0.72,
+    },
+} as const;
+
 export const SKIN_TONES = [
     "#f2c7a0",
     "#dca77d",

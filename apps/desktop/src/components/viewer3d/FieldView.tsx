@@ -10,7 +10,7 @@ export type FieldViewMode = "2d" | "3d";
 
 interface FieldViewProps {
     canvas?: OpenMarchCanvas;
-    onCanvasReady: (canvas: OpenMarchCanvas | undefined) => void;
+    onCanvasReady: (canvas: OpenMarchCanvas) => void;
 }
 
 export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
@@ -48,9 +48,11 @@ export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
 
     return (
         <div className="relative flex h-full min-h-0 min-w-0 flex-1">
-            {viewMode === "2d" && (
-                <Canvas active onCanvasReady={onCanvasReady} />
-            )}
+            <Canvas
+                className={clsx({ hidden: viewMode === "3d" })}
+                active={viewMode === "2d"}
+                onCanvasReady={onCanvasReady}
+            />
             {viewMode === "3d" && (
                 <Suspense
                     fallback={
@@ -72,10 +74,7 @@ export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
                         key={mode}
                         type="button"
                         aria-pressed={viewMode === mode}
-                        onClick={() => {
-                            if (mode === "3d") onCanvasReady(undefined);
-                            setViewMode(mode);
-                        }}
+                        onClick={() => setViewMode(mode)}
                         className={clsx(
                             "rounded-6 min-w-48 px-10 py-6 text-sm font-semibold uppercase transition-colors",
                             viewMode === mode

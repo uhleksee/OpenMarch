@@ -22,8 +22,8 @@ const addLine = (
     z2: number,
 ) => {
     points.push(
-        new THREE.Vector3(x1, 0.025, z1),
-        new THREE.Vector3(x2, 0.025, z2),
+        new THREE.Vector3(x1, 0.06, z1),
+        new THREE.Vector3(x2, 0.06, z2),
     );
 };
 
@@ -210,11 +210,15 @@ export default function Field3D({
 
     return (
         <group>
-            <mesh position={[0, -0.13, 0]} receiveShadow>
+            <mesh position={[0, -0.16, 0]} receiveShadow>
                 <boxGeometry args={[width, 0.24, depth]} />
                 <meshToonMaterial color={STORYBOOK_THEME.grassDark} />
             </mesh>
-            <mesh geometry={stripedFieldGeometry} receiveShadow>
+            <mesh
+                position={[0, 0.02, 0]}
+                geometry={stripedFieldGeometry}
+                receiveShadow
+            >
                 <meshToonMaterial vertexColors />
             </mesh>
             {showGrid && (

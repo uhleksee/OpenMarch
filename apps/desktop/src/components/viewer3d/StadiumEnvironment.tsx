@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import * as THREE from "three";
-import { STORYBOOK_THEME } from "./sceneTheme";
+import { LIGHTING_THEMES, STORYBOOK_THEME } from "./sceneTheme";
+import type { LightingMode } from "./viewer3d.types";
 
 interface StadiumEnvironmentProps {
     fieldWidth: number;
     fieldDepth: number;
+    lightingMode: LightingMode;
 }
 
 const SKY_VERTEX_SHADER = `
@@ -26,15 +28,22 @@ const SKY_FRAGMENT_SHADER = `
     }
 `;
 
-function StorybookSky({ radius }: { radius: number }) {
+function StorybookSky({
+    radius,
+    lightingMode,
+}: {
+    radius: number;
+    lightingMode: LightingMode;
+}) {
+    const lighting = LIGHTING_THEMES[lightingMode];
     const uniforms = useMemo(
         () => ({
-            topColor: { value: new THREE.Color(STORYBOOK_THEME.skyTop) },
+            topColor: { value: new THREE.Color(lighting.skyTop) },
             horizonColor: {
-                value: new THREE.Color(STORYBOOK_THEME.skyHorizon),
+                value: new THREE.Color(lighting.skyHorizon),
             },
         }),
-        [],
+        [lighting.skyHorizon, lighting.skyTop],
     );
 
     return (
@@ -172,10 +181,12 @@ function LightPole({
     position,
     height,
     face,
+    lightingMode,
 }: {
     position: [number, number, number];
     height: number;
     face: 1 | -1;
+    lightingMode: LightingMode;
 }) {
     return (
         <group position={position}>
@@ -186,10 +197,24 @@ function LightPole({
             <mesh
                 position={[0, height, face * 0.42]}
                 rotation={[0.2 * face, 0, 0]}
+                castShadow
             >
                 <boxGeometry args={[1.8, 0.45, 0.22]} />
-                <meshToonMaterial color={STORYBOOK_THEME.uniformLight} />
+                <meshToonMaterial
+                    color={STORYBOOK_THEME.uniformLight}
+                    emissive={lightingMode === "night" ? "#dff2ff" : "#000000"}
+                    emissiveIntensity={lightingMode === "night" ? 2.6 : 0}
+                />
             </mesh>
+            {lightingMode === "night" && (
+                <pointLight
+                    position={[0, height - 0.4, face * 0.5]}
+                    color="#d9ecff"
+                    intensity={2.2}
+                    distance={height * 4.5}
+                    decay={1.7}
+                />
+            )}
         </group>
     );
 }
@@ -197,6 +222,7 @@ function LightPole({
 export default function StadiumEnvironment({
     fieldWidth,
     fieldDepth,
+    lightingMode,
 }: StadiumEnvironmentProps) {
     const largestDimension = Math.max(fieldWidth, fieldDepth);
     const treePositions = [
@@ -209,7 +235,10 @@ export default function StadiumEnvironment({
 
     return (
         <group>
-            <StorybookSky radius={largestDimension * 5} />
+            <StorybookSky
+                radius={largestDimension * 5}
+                lightingMode={lightingMode}
+            />
 
             <mesh
                 position={[0, -0.24, 0]}
@@ -260,6 +289,7 @@ export default function StadiumEnvironment({
                         ]}
                         height={largestDimension * 0.09}
                         face={zFactor === 1 ? -1 : 1}
+                        lightingMode={lightingMode}
                     />
                 )),
             )}

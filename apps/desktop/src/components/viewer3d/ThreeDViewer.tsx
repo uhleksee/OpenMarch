@@ -50,9 +50,10 @@ import { MarcherTimeline } from "@/utilities/Keyframes";
 import { MarcherAppearanceByIdMap } from "@/hooks/queries/useMarcherAppearances";
 import LightingRig from "./LightingRig";
 import StadiumEnvironment from "./StadiumEnvironment";
-import { STORYBOOK_RENDERING, STORYBOOK_THEME } from "./sceneTheme";
+import { LIGHTING_THEMES, STORYBOOK_RENDERING } from "./sceneTheme";
 import {
     DEFAULT_VIEWER_3D_PREFERENCES,
+    type LightingMode,
     type UniformColorMode,
     type UniformStyle,
 } from "./viewer3d.types";
@@ -91,6 +92,11 @@ const loadViewerPreferences = () => {
                 typeof parsed.showLabels === "boolean"
                     ? parsed.showLabels
                     : DEFAULT_VIEWER_3D_PREFERENCES.showLabels,
+            lightingMode: ["day", "sunset", "night"].includes(
+                parsed.lightingMode ?? "",
+            )
+                ? (parsed.lightingMode as LightingMode)
+                : DEFAULT_VIEWER_3D_PREFERENCES.lightingMode,
         };
     } catch {
         return DEFAULT_VIEWER_3D_PREFERENCES;
@@ -128,7 +134,9 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
         const controls = controlsRef.current;
         if (!controls || !(camera instanceof THREE.PerspectiveCamera)) return;
 
-        camera.near = 0.1;
+        // A tighter depth range prevents the field layers from fighting when
+        // viewed from the overhead camera or from far away.
+        camera.near = 0.5;
         camera.far = Math.max(fieldWidth, fieldDepth) * 12;
 
         if (!initializedRef.current) {
@@ -219,6 +227,7 @@ interface StaticFieldSceneProps {
     fieldDepth: number;
     showGrid: boolean;
     showHalfLines: boolean;
+    lightingMode: LightingMode;
 }
 
 const StaticFieldScene = memo(function StaticFieldScene({
@@ -227,21 +236,28 @@ const StaticFieldScene = memo(function StaticFieldScene({
     fieldDepth,
     showGrid,
     showHalfLines,
+    lightingMode,
 }: StaticFieldSceneProps) {
+    const lighting = LIGHTING_THEMES[lightingMode];
     return (
         <>
             <fog
                 attach="fog"
                 args={[
-                    STORYBOOK_THEME.skyHorizon,
+                    lighting.skyHorizon,
                     fieldWidth * STORYBOOK_RENDERING.fogNearFactor,
                     fieldWidth * STORYBOOK_RENDERING.fogFarFactor,
                 ]}
             />
-            <LightingRig fieldWidth={fieldWidth} fieldDepth={fieldDepth} />
+            <LightingRig
+                fieldWidth={fieldWidth}
+                fieldDepth={fieldDepth}
+                mode={lightingMode}
+            />
             <StadiumEnvironment
                 fieldWidth={fieldWidth}
                 fieldDepth={fieldDepth}
+                lightingMode={lightingMode}
             />
             <Field3D
                 fieldProperties={fieldProperties}
@@ -461,6 +477,7 @@ export default function ThreeDViewer() {
                     fieldDepth={depth}
                     showGrid={uiSettings.gridLines}
                     showHalfLines={uiSettings.halfLines}
+                    lightingMode={preferences.lightingMode}
                 />
                 <MarcherFormation
                     marchers={marchers}
@@ -525,6 +542,25 @@ export default function ThreeDViewer() {
                             <option value="classic">Classic</option>
                             <option value="modern">Modern</option>
                             <option value="summer">Summer</option>
+                        </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                        <span className="text-text/70">Lighting</span>
+                        <select
+                            value={preferences.lightingMode}
+                            onChange={(event) =>
+                                setPreferences((current) => ({
+                                    ...current,
+                                    lightingMode: event.target
+                                        .value as LightingMode,
+                                }))
+                            }
+                            className="border-stroke bg-bg-2 rounded-4 border px-3 py-2"
+                        >
+                            <option value="day">Day</option>
+                            <option value="sunset">Sunset</option>
+                            <option value="night">Night</option>
                         </select>
                     </label>
 

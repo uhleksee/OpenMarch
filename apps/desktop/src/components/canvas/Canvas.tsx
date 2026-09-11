@@ -21,7 +21,7 @@ import clsx from "clsx";
 import { useAnimation } from "@/hooks/useAnimation";
 import CollisionMarker from "@/global/classes/canvasObjects/CollisionMarker";
 import { useCollisionStore } from "@/stores/CollisionStore";
-import { setCanvasStore, useCanvasStore } from "@/stores/CanvasStore";
+import { setCanvasStore } from "@/stores/CanvasStore";
 import useEditablePath from "./hooks/editablePath";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTimingObjects } from "@/hooks";
@@ -103,9 +103,6 @@ export default function Canvas({
     const innerDivRef = useRef<HTMLDivElement>(null);
     const fullscreenEnterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const fullscreenExitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const disposeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-        null,
-    );
     const { currentCollisions } = useCollisionStore();
 
     // Custom hooks for the canvas
@@ -199,29 +196,6 @@ export default function Canvas({
         canvas,
         onCanvasReady,
     ]);
-
-    // The 2D and 3D renderers are deliberately mutually exclusive. Dispose
-    // Fabric and all of its DOM listeners when the user enters the 3D viewer.
-    useEffect(() => {
-        if (!canvas) return;
-
-        if (disposeTimeoutRef.current) {
-            clearTimeout(disposeTimeoutRef.current);
-            disposeTimeoutRef.current = null;
-        }
-
-        return () => {
-            // Delay disposal by one task so React Strict Mode's development
-            // effect replay can cancel it while a real unmount still disposes.
-            disposeTimeoutRef.current = setTimeout(() => {
-                canvas.dispose();
-                if (window.canvas === canvas) window.canvas = null;
-                if (useCanvasStore.getState().canvas === canvas) {
-                    setCanvasStore(null);
-                }
-            }, 0);
-        };
-    }, [canvas]);
 
     // Initiate listeners
     useEffect(() => {
