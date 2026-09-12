@@ -25,7 +25,6 @@ import {
     type PlaybackStartInfo,
 } from "./playbackTiming";
 import { usePerformanceDiagnosticsStore } from "@/stores/PerformanceDiagnosticsStore";
-import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 
 export const waveColor = "rgb(180, 180, 180)";
 export const lightProgressColor = "rgb(100, 66, 255)";
@@ -341,13 +340,6 @@ export default function AudioPlayer() {
     // Sync audio and store playback position with the selected page
     useEffect(() => {
         if (!selectedPage || isPlaying) return;
-
-        const playbackStore = usePlaybackPageStore.getState();
-        if (playbackStore.pendingSelectionSyncPageId === selectedPage.id) {
-            playbackStore.setPendingSelectionSyncPageId(null);
-            return;
-        }
-
         setPlaybackTimestamp(getPausedPlaybackSeconds(selectedPage));
     }, [selectedPage, isPlaying, setPlaybackTimestamp]);
 
@@ -443,14 +435,8 @@ export default function AudioPlayer() {
                 startOffset: playbackTimestamp,
             };
         } else {
-            const pausedAt = playbackStartInfoRef.current
-                ? getLivePlaybackPosition()
-                : null;
-
             // If not playing, stop any existing playback
             stopPlayback();
-
-            if (pausedAt !== null) setPlaybackTimestamp(pausedAt);
 
             // Clear playback tracking info
             playbackStartInfoRef.current = null;
@@ -545,8 +531,8 @@ export default function AudioPlayer() {
         }
     }, [audioMuted, audioVolume]);
 
-    // Preserve the exact playback position when paused. Manual page selection
-    // updates playbackTimestamp to that page's departure time above.
+    // Keep the waveform at the selected page's departure. Pausing synchronizes
+    // the selected page first, so playback restarts from that page boundary.
     useEffect(() => {
         if (!waveSurfer || !audioBuffer || isPlaying) return;
         if (audioDuration <= 0) return;

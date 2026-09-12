@@ -15,7 +15,7 @@ describe("calculateLivePlaybackSeconds", () => {
         expect(calculateLivePlaybackSeconds(11.52, playback)).toBe(17.5);
     });
 
-    it("resumes from an exact mid-page offset", () => {
+    it("supports an arbitrary playback offset", () => {
         expect(
             calculateLivePlaybackSeconds(21, {
                 playStartTime: 20,

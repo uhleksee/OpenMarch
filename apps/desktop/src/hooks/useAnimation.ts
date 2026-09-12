@@ -76,7 +76,6 @@ export const useAnimation = ({
 
         if (isPlaying) {
             if (!wasPlayingRef.current) {
-                playbackStore.setPendingSelectionSyncPageId(null);
                 if (!freezePageUpdates) {
                     playbackStore.setPlaybackPageId(
                         selectedPageRef.current?.id ?? null,
@@ -93,7 +92,6 @@ export const useAnimation = ({
         const playbackPageId = playbackStore.playbackPageId;
         const playbackPage = playbackPageId ? pagesById[playbackPageId] : null;
         if (playbackPage && playbackPage.id !== selectedPageRef.current?.id) {
-            playbackStore.setPendingSelectionSyncPageId(playbackPage.id);
             setSelectedPage(playbackPage);
         }
     }, [freezePageUpdates, isPlaying, pagesById, setSelectedPage]);

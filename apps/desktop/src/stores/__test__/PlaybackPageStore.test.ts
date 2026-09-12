@@ -11,18 +11,4 @@ describe("PlaybackPageStore", () => {
 
         expect(usePlaybackPageStore.getState().playbackPageId).toBe(42);
     });
-
-    it("tracks and clears a pending editor selection sync", () => {
-        const store = usePlaybackPageStore.getState();
-        store.setPendingSelectionSyncPageId(84);
-
-        expect(usePlaybackPageStore.getState().pendingSelectionSyncPageId).toBe(
-            84,
-        );
-
-        usePlaybackPageStore.getState().setPendingSelectionSyncPageId(null);
-        expect(
-            usePlaybackPageStore.getState().pendingSelectionSyncPageId,
-        ).toBeNull();
-    });
 });
