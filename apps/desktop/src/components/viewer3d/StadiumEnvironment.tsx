@@ -328,6 +328,7 @@ function StadiumLightTower({
     lightingMode,
     fieldWidth,
     fieldDepth,
+    emitsFieldLight,
 }: {
     position: [number, number, number];
     height: number;
@@ -335,6 +336,7 @@ function StadiumLightTower({
     lightingMode: LightingMode;
     fieldWidth: number;
     fieldDepth: number;
+    emitsFieldLight: boolean;
 }) {
     const panelWidth = 7.8;
     const panelHeight = 3.2;
@@ -474,19 +476,25 @@ function StadiumLightTower({
                             depthWrite={false}
                             blending={THREE.AdditiveBlending}
                             side={THREE.DoubleSide}
+                            forceSinglePass
                             toneMapped={false}
                         />
                     </mesh>
-                    <spotLight
-                        position={[0, height + 0.2, face * 0.8]}
-                        target={lightTarget}
-                        color="#d9ecff"
-                        intensity={720}
-                        distance={beamTransform.length * 1.35}
-                        decay={1.18}
-                        angle={0.48}
-                        penumbra={0.82}
-                    />
+                    {emitsFieldLight && (
+                        <spotLight
+                            position={[0, height + 0.2, face * 0.8]}
+                            target={lightTarget}
+                            color="#d9ecff"
+                            intensity={680}
+                            distance={Math.max(
+                                beamTransform.length * 1.65,
+                                Math.max(fieldWidth, fieldDepth) * 1.05,
+                            )}
+                            decay={1.18}
+                            angle={0.78}
+                            penumbra={0.82}
+                        />
+                    )}
                     <mesh
                         position={beamTransform.position}
                         quaternion={beamTransform.quaternion}
@@ -508,6 +516,7 @@ function StadiumLightTower({
                             depthWrite={false}
                             blending={THREE.AdditiveBlending}
                             side={THREE.DoubleSide}
+                            forceSinglePass
                             toneMapped={false}
                         />
                     </mesh>
@@ -581,7 +590,7 @@ export default function StadiumEnvironment({
                 width={fieldWidth * 0.62}
                 facing={-1}
             />
-            {stadiumLightPositions.map(({ x, y, z, face }) => (
+            {stadiumLightPositions.map(({ x, y, z, face }, index) => (
                 <StadiumLightTower
                     key={`${x}-${z}`}
                     position={[x, 0, z]}
@@ -590,6 +599,7 @@ export default function StadiumEnvironment({
                     lightingMode={lightingMode}
                     fieldWidth={fieldWidth}
                     fieldDepth={fieldDepth}
+                    emitsFieldLight={index === 0 || index === 3}
                 />
             ))}
 

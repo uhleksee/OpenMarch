@@ -24,6 +24,7 @@ interface ShadowLayer {
     fixedDirection?: THREE.Vector3;
     lightPosition?: THREE.Vector3;
     distanceLengthFactor?: number;
+    maxLength?: number;
 }
 
 const SHADOW_GEOMETRY = new THREE.PlaneGeometry(1, 1);
@@ -80,7 +81,7 @@ const createShadowMaterial = ({
         fragmentShader: SHADOW_FRAGMENT_SHADER,
         transparent: true,
         depthWrite: false,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
         toneMapped: false,
         polygonOffset: true,
         polygonOffsetFactor: -1,
@@ -92,20 +93,15 @@ const DAY_SHADOW_MATERIAL = createShadowMaterial({
     opacity: 0.3,
     taper: 0.1,
 });
-const SUNSET_SOFT_SHADOW_MATERIAL = createShadowMaterial({
-    color: "#281927",
-    opacity: 0.14,
-    taper: 0.34,
-});
 const SUNSET_CORE_SHADOW_MATERIAL = createShadowMaterial({
     color: "#21121e",
-    opacity: 0.24,
-    taper: 0.26,
+    opacity: 0.23,
+    taper: 0.22,
 });
 const NIGHT_SHADOW_MATERIAL = createShadowMaterial({
     color: "#020916",
-    opacity: 0.17,
-    taper: 0.24,
+    opacity: 0.14,
+    taper: 0.2,
 });
 
 const LOCAL_SHADOW_FORWARD = new THREE.Vector3(0, 0, -1);
@@ -125,6 +121,7 @@ export default function MarcherShadows({
         layers: ShadowLayer[] | null;
         marcherIds: number[] | null;
     }>({ layers: null, marcherIds: null });
+    const changedLayersRef = useRef<boolean[]>([]);
     const matrix = useMemo(() => new THREE.Matrix4(), []);
     const position = useMemo(() => new THREE.Vector3(), []);
     const scale = useMemo(() => new THREE.Vector3(), []);
@@ -145,9 +142,10 @@ export default function MarcherShadows({
             return getStadiumLightPositions(fieldWidth, fieldDepth).map(
                 ({ x, y, z }, index) => ({
                     material: NIGHT_SHADOW_MATERIAL,
-                    width: 1.32,
-                    length: 5.2,
-                    distanceLengthFactor: 0.038,
+                    width: 0.92,
+                    length: 3.9,
+                    distanceLengthFactor: 0.022,
+                    maxLength: 5.8,
                     yOffset: 0.032 + index * 0.0012,
                     lightPosition: new THREE.Vector3(x, y, z),
                 }),
@@ -155,20 +153,13 @@ export default function MarcherShadows({
         }
 
         if (mode === "sunset") {
-            const longShadowLength = Math.min(largestDimension * 0.11, 18);
+            const longShadowLength = Math.min(largestDimension * 0.065, 10.5);
             return [
                 {
-                    material: SUNSET_SOFT_SHADOW_MATERIAL,
-                    width: 1.72,
+                    material: SUNSET_CORE_SHADOW_MATERIAL,
+                    width: 1.18,
                     length: longShadowLength,
                     yOffset: 0.032,
-                    fixedDirection: awayFromSceneLight,
-                },
-                {
-                    material: SUNSET_CORE_SHADOW_MATERIAL,
-                    width: 1.02,
-                    length: longShadowLength * 0.88,
-                    yOffset: 0.034,
                     fixedDirection: awayFromSceneLight,
                 },
             ];
@@ -200,7 +191,12 @@ export default function MarcherShadows({
             lastStatesRef.current.fill(Number.NaN);
         }
 
-        const changedLayers = new Array(layers.length).fill(false);
+        if (changedLayersRef.current.length !== layers.length) {
+            changedLayersRef.current = new Array(layers.length).fill(false);
+        } else {
+            changedLayersRef.current.fill(false);
+        }
+        const changedLayers = changedLayersRef.current;
         for (let index = 0; index < marcherIds.length; index += 1) {
             const marcher = marcherRefs.get(marcherIds[index])?.current;
             const isVisible = marcher?.visible ?? false;
@@ -253,7 +249,7 @@ export default function MarcherShadows({
                         layer.length +
                             distanceToLight * (layer.distanceLengthFactor ?? 0),
                         layer.length,
-                        8.6,
+                        layer.maxLength ?? layer.length,
                     );
                     direction.normalize();
                 } else {

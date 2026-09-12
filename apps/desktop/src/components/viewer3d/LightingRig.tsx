@@ -80,7 +80,7 @@ export default function LightingRig({
                 shadow-camera-bottom={-shadowDepth}
                 shadow-normalBias={isSunset ? 0.015 : 0.025}
                 shadow-bias={-0.00025}
-                shadow-radius={isSunset ? 2.4 : 1.4}
+                shadow-radius={isSunset ? 1.6 : 1.4}
             />
             <directionalLight
                 color={lighting.rim}
