@@ -11,10 +11,57 @@ const getVariation = (seed: number) => {
     const random = normalizedSeed / 233280;
     return {
         skin: SKIN_TONES[Math.floor(random * SKIN_TONES.length)],
-        height: 1.06 + random * 0.1,
+        height: 1.01 + random * 0.055,
         plumeLean: (random - 0.5) * 0.14,
     };
 };
+
+/**
+ * Shared landmarks keep the procedural model proportioned like one coherent
+ * mannequin. Uniform details can change without realigning the body, animation
+ * pivots, and hats independently.
+ */
+const MARCHER_PROPORTIONS = {
+    hipHeight: 1.22,
+    torsoCenter: 1.74,
+    shoulderHeight: 2.13,
+    shoulderOffset: 0.48,
+    headCenter: 2.58,
+} as const;
+
+const HEAD_AND_NECK_PROFILE = [
+    new THREE.Vector2(0, -0.36),
+    new THREE.Vector2(0.11, -0.36),
+    new THREE.Vector2(0.115, -0.24),
+    new THREE.Vector2(0.2, -0.21),
+    new THREE.Vector2(0.27, -0.11),
+    new THREE.Vector2(0.29, 0.05),
+    new THREE.Vector2(0.25, 0.2),
+    new THREE.Vector2(0.13, 0.29),
+    new THREE.Vector2(0, 0.32),
+];
+
+// Geometry is immutable and shared by every marcher. This keeps model detail
+// independent from formation size and leaves room for richer uniform palettes.
+const MODEL_GEOMETRIES = {
+    leg: new THREE.CylinderGeometry(0.135, 0.11, 1.08, 6),
+    shoe: new THREE.BoxGeometry(0.26, 0.16, 0.44),
+    torso: new THREE.CylinderGeometry(0.48, 0.35, 1.08, 8),
+    classicSash: new THREE.BoxGeometry(0.15, 0.94, 0.05),
+    modernPanel: new THREE.BoxGeometry(0.18, 0.62, 0.06),
+    belt: new THREE.BoxGeometry(0.68, 0.13, 0.07),
+    upperArm: new THREE.CapsuleGeometry(0.095, 0.34, 3, 6),
+    forearm: new THREE.CapsuleGeometry(0.09, 0.34, 3, 6),
+    hand: new THREE.SphereGeometry(0.105, 7, 5),
+    headAndNeck: new THREE.LatheGeometry(HEAD_AND_NECK_PROFILE, 8),
+    shako: new THREE.CylinderGeometry(0.305, 0.274, 0.56, 8),
+    shakoBrim: new THREE.BoxGeometry(0.61, 0.06, 0.28),
+    shakoBadge: new THREE.BoxGeometry(0.38, 0.12, 0.05),
+    plume: new THREE.IcosahedronGeometry(0.14, 1),
+    plumeCenter: new THREE.IcosahedronGeometry(0.17, 1),
+    cap: new THREE.SphereGeometry(0.31, 8, 6, 0, Math.PI * 2, 0, 1.48),
+    capBrim: new THREE.BoxGeometry(0.58, 0.06, 0.28),
+} as const;
 
 interface ArmPoseDefinition {
     leftShoulder: [number, number, number];
@@ -184,39 +231,59 @@ export default function ToonMarcherModel({
     });
 
     return (
-        <group>
+        <group dispose={null}>
             <group ref={rootRef} scale={[1, variation.height, 1]}>
                 <group ref={lowerBodyRef}>
-                    <group ref={leftLegRef} position={[-0.2, 0.88, 0]}>
-                        <mesh position={[0, -0.38, 0]}>
-                            <cylinderGeometry args={[0.13, 0.15, 0.76, 6]} />
+                    <group
+                        ref={leftLegRef}
+                        position={[-0.18, MARCHER_PROPORTIONS.hipHeight, 0]}
+                    >
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.leg}
+                            position={[0, -0.54, 0]}
+                        >
                             <meshToonMaterial color={pantsColor} />
                         </mesh>
-                        <mesh position={[0, -0.78, 0.09]}>
-                            <boxGeometry args={[0.28, 0.16, 0.48]} />
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.shoe}
+                            position={[0, -1.14, 0.09]}
+                        >
                             <meshToonMaterial color={STORYBOOK_THEME.shoe} />
                         </mesh>
                     </group>
-                    <group ref={rightLegRef} position={[0.2, 0.88, 0]}>
-                        <mesh position={[0, -0.38, 0]}>
-                            <cylinderGeometry args={[0.13, 0.15, 0.76, 6]} />
+                    <group
+                        ref={rightLegRef}
+                        position={[0.18, MARCHER_PROPORTIONS.hipHeight, 0]}
+                    >
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.leg}
+                            position={[0, -0.54, 0]}
+                        >
                             <meshToonMaterial color={pantsColor} />
                         </mesh>
-                        <mesh position={[0, -0.78, 0.09]}>
-                            <boxGeometry args={[0.28, 0.16, 0.48]} />
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.shoe}
+                            position={[0, -1.14, 0.09]}
+                        >
                             <meshToonMaterial color={STORYBOOK_THEME.shoe} />
                         </mesh>
                     </group>
                 </group>
 
-                <mesh position={[0, 1.42, 0]}>
-                    <cylinderGeometry args={[0.34, 0.48, 1.12, 7]} />
+                <mesh
+                    geometry={MODEL_GEOMETRIES.torso}
+                    position={[0, MARCHER_PROPORTIONS.torsoCenter, 0]}
+                    scale={[1, 1, 0.72]}
+                >
                     <meshToonMaterial color={color} />
                 </mesh>
 
                 {isClassic && (
-                    <mesh position={[0, 1.47, 0.36]} rotation={[0, 0, -0.56]}>
-                        <boxGeometry args={[0.16, 0.92, 0.05]} />
+                    <mesh
+                        geometry={MODEL_GEOMETRIES.classicSash}
+                        position={[0, 1.75, 0.32]}
+                        rotation={[0, 0, -0.54]}
+                    >
                         <meshToonMaterial
                             color={STORYBOOK_THEME.uniformLight}
                         />
@@ -225,69 +292,87 @@ export default function ToonMarcherModel({
                 {isModern && (
                     <>
                         <mesh
-                            position={[-0.2, 1.7, 0.34]}
+                            geometry={MODEL_GEOMETRIES.modernPanel}
+                            position={[-0.2, 1.92, 0.315]}
                             rotation={[0, 0, -0.42]}
                         >
-                            <boxGeometry args={[0.18, 0.62, 0.06]} />
                             <meshToonMaterial
                                 color={STORYBOOK_THEME.uniformLight}
                             />
                         </mesh>
                         <mesh
-                            position={[0.2, 1.7, 0.34]}
+                            geometry={MODEL_GEOMETRIES.modernPanel}
+                            position={[0.2, 1.92, 0.315]}
                             rotation={[0, 0, 0.42]}
                         >
-                            <boxGeometry args={[0.18, 0.62, 0.06]} />
                             <meshToonMaterial
                                 color={STORYBOOK_THEME.uniformLight}
                             />
                         </mesh>
                     </>
                 )}
-                <mesh position={[0, 1.04, 0.34]}>
-                    <boxGeometry args={[0.66, 0.14, 0.08]} />
+                <mesh
+                    geometry={MODEL_GEOMETRIES.belt}
+                    position={[0, 1.24, 0.265]}
+                >
                     <meshToonMaterial color={STORYBOOK_THEME.uniformDark} />
                 </mesh>
 
                 <group
                     ref={leftArmRef}
-                    position={[-0.44, 1.88, 0]}
+                    position={[
+                        -MARCHER_PROPORTIONS.shoulderOffset,
+                        MARCHER_PROPORTIONS.shoulderHeight,
+                        0,
+                    ]}
                     rotation={[
                         armPose.leftShoulder[0],
                         armPose.leftShoulder[1],
                         armPose.leftShoulder[2] + (isSummer ? -0.06 : 0),
                     ]}
                 >
-                    <mesh position={[0, -0.25, 0]}>
-                        <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
+                    <mesh
+                        geometry={MODEL_GEOMETRIES.upperArm}
+                        position={[0, -0.25, 0]}
+                    >
                         <meshToonMaterial
                             color={isSummer ? variation.skin : color}
                         />
                     </mesh>
                     <group position={[0, -0.5, 0]} rotation={armPose.leftElbow}>
-                        <mesh position={[0, -0.25, 0]}>
-                            <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.forearm}
+                            position={[0, -0.25, 0]}
+                        >
                             <meshToonMaterial
                                 color={isSummer ? variation.skin : color}
                             />
                         </mesh>
-                        <mesh position={[0, -0.53, 0]}>
-                            <sphereGeometry args={[0.14, 7, 5]} />
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.hand}
+                            position={[0, -0.53, 0]}
+                        >
                             <meshToonMaterial color={variation.skin} />
                         </mesh>
                     </group>
                 </group>
                 <group
                     ref={rightArmRef}
-                    position={[0.44, 1.88, 0]}
+                    position={[
+                        MARCHER_PROPORTIONS.shoulderOffset,
+                        MARCHER_PROPORTIONS.shoulderHeight,
+                        0,
+                    ]}
                     rotation={[
                         armPose.rightShoulder[0],
                         armPose.rightShoulder[1],
                         armPose.rightShoulder[2] + (isSummer ? 0.06 : 0),
                     ]}
                 >
-                    <mesh position={[0, -0.25, 0]}>
-                        <capsuleGeometry args={[0.115, 0.34, 3, 6]} />
+                    <mesh
+                        geometry={MODEL_GEOMETRIES.upperArm}
+                        position={[0, -0.25, 0]}
+                    >
                         <meshToonMaterial
                             color={isSummer ? variation.skin : color}
                         />
@@ -296,101 +381,125 @@ export default function ToonMarcherModel({
                         position={[0, -0.5, 0]}
                         rotation={armPose.rightElbow}
                     >
-                        <mesh position={[0, -0.25, 0]}>
-                            <capsuleGeometry args={[0.105, 0.34, 3, 6]} />
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.forearm}
+                            position={[0, -0.25, 0]}
+                        >
                             <meshToonMaterial
                                 color={isSummer ? variation.skin : color}
                             />
                         </mesh>
-                        <mesh position={[0, -0.53, 0]}>
-                            <sphereGeometry args={[0.14, 7, 5]} />
+                        <mesh
+                            geometry={MODEL_GEOMETRIES.hand}
+                            position={[0, -0.53, 0]}
+                        >
                             <meshToonMaterial color={variation.skin} />
                         </mesh>
                     </group>
                 </group>
 
-                <mesh position={[0, 2.22, 0]}>
-                    <sphereGeometry args={[0.4, 9, 7]} />
-                    <meshToonMaterial color={variation.skin} />
-                </mesh>
+                <group position={[0, MARCHER_PROPORTIONS.headCenter, 0]}>
+                    <mesh
+                        geometry={MODEL_GEOMETRIES.headAndNeck}
+                        scale={[0.9, 1, 0.94]}
+                    >
+                        <meshToonMaterial color={variation.skin} />
+                    </mesh>
 
-                {isClassic && (
-                    <>
-                        <mesh position={[0, 2.55, -0.035]}>
-                            <cylinderGeometry args={[0.33, 0.39, 0.62, 8]} />
-                            <meshToonMaterial
-                                color={STORYBOOK_THEME.uniformDark}
-                            />
-                        </mesh>
-                        <mesh position={[0, 2.28, 0.3]}>
-                            <boxGeometry args={[0.82, 0.08, 0.28]} />
-                            <meshToonMaterial
-                                color={STORYBOOK_THEME.uniformDark}
-                            />
-                        </mesh>
-                        <mesh position={[0, 2.66, 0.33]}>
-                            <boxGeometry args={[0.5, 0.1, 0.05]} />
-                            <meshToonMaterial color={color} />
-                        </mesh>
-                        <group
-                            position={[variation.plumeLean, 3.08, 0]}
-                            rotation={[0, 0, variation.plumeLean]}
-                        >
-                            {[-0.2, 0.06, 0.32].map((y, index) => (
-                                <mesh
-                                    key={y}
-                                    position={[
-                                        index * variation.plumeLean * 0.7,
-                                        y,
-                                        0,
-                                    ]}
-                                    scale={[1, 1.45, 0.72]}
-                                >
-                                    <icosahedronGeometry
-                                        args={[index === 1 ? 0.2 : 0.17, 1]}
-                                    />
-                                    <meshToonMaterial
-                                        color={
+                    {isClassic && (
+                        <>
+                            <mesh
+                                geometry={MODEL_GEOMETRIES.shako}
+                                position={[0, 0.32, -0.005]}
+                            >
+                                <meshToonMaterial
+                                    color={STORYBOOK_THEME.uniformDark}
+                                />
+                            </mesh>
+                            <mesh
+                                geometry={MODEL_GEOMETRIES.shakoBrim}
+                                position={[0, 0.04, 0.255]}
+                            >
+                                <meshToonMaterial
+                                    color={STORYBOOK_THEME.uniformDark}
+                                />
+                            </mesh>
+                            <mesh
+                                geometry={MODEL_GEOMETRIES.shakoBadge}
+                                position={[0, 0.35, 0.3]}
+                            >
+                                <meshToonMaterial color={color} />
+                            </mesh>
+                            <group
+                                position={[variation.plumeLean, 0.65, 0]}
+                                rotation={[0, 0, variation.plumeLean]}
+                            >
+                                {[-0.06, 0.12, 0.31].map((y, index) => (
+                                    <mesh
+                                        key={y}
+                                        geometry={
                                             index === 1
-                                                ? STORYBOOK_THEME.uniformLight
-                                                : color
+                                                ? MODEL_GEOMETRIES.plumeCenter
+                                                : MODEL_GEOMETRIES.plume
                                         }
-                                    />
-                                </mesh>
-                            ))}
-                        </group>
-                    </>
-                )}
-                {isModern && (
-                    <>
-                        <mesh position={[0, 2.5, 0]}>
-                            <sphereGeometry
-                                args={[0.4, 8, 6, 0, Math.PI * 2, 0, 1.7]}
-                            />
-                            <meshToonMaterial
-                                color={STORYBOOK_THEME.uniformLight}
-                            />
-                        </mesh>
-                        <mesh position={[0, 2.38, 0.34]}>
-                            <boxGeometry args={[0.7, 0.07, 0.3]} />
-                            <meshToonMaterial color={color} />
-                        </mesh>
-                    </>
-                )}
-                {isSummer && (
-                    <>
-                        <mesh position={[0, 2.48, -0.05]}>
-                            <sphereGeometry
-                                args={[0.39, 8, 5, 0, Math.PI * 2, 0, 1.45]}
-                            />
-                            <meshToonMaterial color={STORYBOOK_THEME.hair} />
-                        </mesh>
-                        <mesh position={[0, 2.42, 0.3]}>
-                            <boxGeometry args={[0.62, 0.07, 0.28]} />
-                            <meshToonMaterial color={color} />
-                        </mesh>
-                    </>
-                )}
+                                        position={[
+                                            index * variation.plumeLean * 0.7,
+                                            y,
+                                            0,
+                                        ]}
+                                        scale={[1, 1.3, 0.72]}
+                                    >
+                                        <meshToonMaterial
+                                            color={
+                                                index === 1
+                                                    ? STORYBOOK_THEME.uniformLight
+                                                    : color
+                                            }
+                                        />
+                                    </mesh>
+                                ))}
+                            </group>
+                        </>
+                    )}
+                    {isModern && (
+                        <>
+                            <mesh
+                                geometry={MODEL_GEOMETRIES.cap}
+                                position={[0, 0.01, 0]}
+                                scale={[0.9, 1, 0.95]}
+                            >
+                                <meshToonMaterial
+                                    color={STORYBOOK_THEME.uniformLight}
+                                />
+                            </mesh>
+                            <mesh
+                                geometry={MODEL_GEOMETRIES.capBrim}
+                                position={[0, 0.06, 0.25]}
+                            >
+                                <meshToonMaterial color={color} />
+                            </mesh>
+                        </>
+                    )}
+                    {isSummer && (
+                        <>
+                            <mesh
+                                geometry={MODEL_GEOMETRIES.cap}
+                                position={[0, 0, -0.01]}
+                                scale={[0.9, 1, 0.95]}
+                            >
+                                <meshToonMaterial
+                                    color={STORYBOOK_THEME.hair}
+                                />
+                            </mesh>
+                            <mesh
+                                geometry={MODEL_GEOMETRIES.capBrim}
+                                position={[0, 0.05, 0.25]}
+                            >
+                                <meshToonMaterial color={color} />
+                            </mesh>
+                        </>
+                    )}
+                </group>
             </group>
         </group>
     );
