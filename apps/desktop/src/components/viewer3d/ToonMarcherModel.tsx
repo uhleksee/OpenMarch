@@ -149,6 +149,7 @@ export default function ToonMarcherModel({
     variantSeed,
     uniformStyle,
     motionRef,
+    gaitRef,
     instrumentPose,
 }: MarcherModelProps) {
     const rootRef = useRef<THREE.Group>(null);
@@ -166,7 +167,7 @@ export default function ToonMarcherModel({
     const pantsColor = isSummer ? color : STORYBOOK_THEME.uniformDark;
     const armPose = ARM_POSES[instrumentPose];
 
-    useFrame(({ clock }, delta) => {
+    useFrame((_, delta) => {
         const root = rootRef.current;
         const lowerBody = lowerBodyRef.current;
         const leftArm = leftArmRef.current;
@@ -190,8 +191,10 @@ export default function ToonMarcherModel({
             movementTarget,
             1 - Math.exp(-delta * 14),
         );
-        const phase = clock.elapsedTime * 5.4;
-        const stride = Math.sin(phase) * 0.34 * motionBlendRef.current;
+        const phase = gaitRef.phase;
+        // A cosine reaches alternating extrema on integer beats, making the
+        // leading heel visually plant on every count instead of between them.
+        const stride = Math.cos(phase) * 0.34 * motionBlendRef.current;
 
         const armSwing = armPose.marchSwing;
         leftArm.rotation.x = THREE.MathUtils.lerp(
@@ -204,16 +207,8 @@ export default function ToonMarcherModel({
             armPose.rightShoulder[0] + stride * armSwing,
             smoothing,
         );
-        leftLeg.rotation.x = THREE.MathUtils.lerp(
-            leftLeg.rotation.x,
-            stride,
-            smoothing,
-        );
-        rightLeg.rotation.x = THREE.MathUtils.lerp(
-            rightLeg.rotation.x,
-            -stride,
-            smoothing,
-        );
+        leftLeg.rotation.x = stride;
+        rightLeg.rotation.x = -stride;
         lowerBody.rotation.y = THREE.MathUtils.lerp(
             lowerBody.rotation.y,
             motionRef.legFacing,
@@ -221,7 +216,7 @@ export default function ToonMarcherModel({
         );
 
         const bob = Math.abs(Math.sin(phase)) * 0.045 * motionBlendRef.current;
-        const sway = Math.sin(phase * 0.5) * 0.03 * motionBlendRef.current;
+        const sway = Math.cos(phase) * 0.03 * motionBlendRef.current;
         root.position.y = THREE.MathUtils.lerp(root.position.y, bob, smoothing);
         root.rotation.z = THREE.MathUtils.lerp(
             root.rotation.z,

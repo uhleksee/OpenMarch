@@ -9,12 +9,18 @@ export interface MarcherModelProps {
     variantSeed: number;
     uniformStyle: UniformStyle;
     motionRef: MarcherMotionRef;
+    gaitRef: MarcherGaitRef;
     instrumentPose: InstrumentPose;
 }
 
 export interface MarcherMotionRef {
     current: boolean;
     legFacing: number;
+}
+
+/** Shared mutable phase so every marcher plants on the same musical count. */
+export interface MarcherGaitRef {
+    phase: number;
 }
 
 export type MarcherModelComponent = ComponentType<MarcherModelProps>;
@@ -27,6 +33,7 @@ interface Marcher3DProps {
     labelVisible: boolean;
     uniformStyle: UniformStyle;
     motionRef: MarcherMotionRef;
+    gaitRef: MarcherGaitRef;
     model?: MarcherModelComponent;
 }
 
@@ -38,6 +45,7 @@ function Marcher3D({
     labelVisible,
     uniformStyle,
     motionRef,
+    gaitRef,
     model: Model = ToonMarcherModel,
 }: Marcher3DProps) {
     return (
@@ -47,6 +55,7 @@ function Marcher3D({
                 variantSeed={marcherId}
                 uniformStyle={uniformStyle}
                 motionRef={motionRef}
+                gaitRef={gaitRef}
                 instrumentPose={getInstrumentPose(section)}
             />
             {labelVisible && (

@@ -34,7 +34,10 @@ import { getCoordinatesAtTime } from "@/utilities/Keyframes";
 import { getLivePlaybackPosition } from "@/components/timeline/audio/AudioPlayer";
 import { resolveAppearanceFromStack } from "@/entity-components/appearance";
 import Field3D from "./Field3D";
-import Marcher3D, { type MarcherMotionRef } from "./Marcher3D";
+import Marcher3D, {
+    type MarcherGaitRef,
+    type MarcherMotionRef,
+} from "./Marcher3D";
 import {
     CameraPreset,
     canvasCoordinatesToWorld,
@@ -64,6 +67,8 @@ import {
     usePerformanceDiagnosticsStore,
 } from "@/stores/PerformanceDiagnosticsStore";
 import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
+import type Beat from "@/global/classes/Beat";
+import { createMarchBeatTimeline, getMarchStepAtTime } from "./marchBeatPhase";
 
 const CAMERA_LABELS: Record<CameraPreset, string> = {
     overhead: "Overhead",
@@ -332,6 +337,7 @@ const StaticFieldScene = memo(function StaticFieldScene({
 
 interface MarcherFormationProps {
     marchers: Marcher[];
+    beats: Beat[];
     marcherPages: Record<number, MarcherPage>;
     marcherTimelines: Map<number, MarcherTimeline>;
     marcherAppearances: MarcherAppearanceByIdMap;
@@ -347,6 +353,7 @@ interface MarcherFormationProps {
 
 function MarcherFormation({
     marchers,
+    beats,
     marcherPages,
     marcherTimelines,
     marcherAppearances,
@@ -361,11 +368,16 @@ function MarcherFormation({
 }: MarcherFormationProps) {
     const marcherRefs = useRef(new Map<number, MarcherShadowGroupRef>());
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
+    const gaitRef = useRef<MarcherGaitRef>({ phase: 0 });
     const { isPlaying } = useIsPlaying()!;
     const queryClient = useQueryClient();
     const marcherIds = useMemo(
         () => marchers.map((marcher) => marcher.id),
         [marchers],
+    );
+    const marchBeatTimeline = useMemo(
+        () => createMarchBeatTimeline(beats),
+        [beats],
     );
 
     const setPausedPositions = useCallback(() => {
@@ -429,7 +441,15 @@ function MarcherFormation({
 
     useFrame(() => {
         if (!isPlaying) return;
-        const currentTime = getLivePlaybackPosition() * 1000;
+        const playbackSeconds = getLivePlaybackPosition();
+        const marchStep = getMarchStepAtTime(
+            playbackSeconds,
+            marchBeatTimeline,
+        );
+        if (marchStep != null) {
+            gaitRef.current.phase = Math.PI * marchStep;
+        }
+        const currentTime = playbackSeconds * 1000;
 
         for (const marcher of marchers) {
             const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
@@ -467,7 +487,7 @@ function MarcherFormation({
                 // A drill timeline query may still be loading at this frame.
             }
         }
-    });
+    }, -1);
 
     return (
         <group>
@@ -516,6 +536,7 @@ function MarcherFormation({
                             labelVisible={showLabels && appearance.textVisible}
                             uniformStyle={uniformStyle}
                             motionRef={motionRef}
+                            gaitRef={gaitRef.current}
                         />
                     </group>
                 );
@@ -530,7 +551,7 @@ export default function ThreeDViewer() {
     const databaseReady = useDatabaseReady();
     const queryClient = useQueryClient();
     const { selectedPage } = useSelectedPage()!;
-    const { pages } = useTimingObjects();
+    const { beats, pages } = useTimingObjects();
     const { uiSettings } = useUiSettingsStore();
     const diagnosticsEnabled = usePerformanceDiagnosticsStore(
         (state) => state.enabled,
@@ -602,6 +623,7 @@ export default function ThreeDViewer() {
                 {showPerformers && (
                     <MarcherFormation
                         marchers={marchers}
+                        beats={beats}
                         marcherPages={marcherPages}
                         marcherTimelines={marcherTimelines}
                         marcherAppearances={marcherAppearances}
