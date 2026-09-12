@@ -3,10 +3,13 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
     getSceneLightPosition,
+    getStadiumLightPositions,
     LIGHTING_THEMES,
     STORYBOOK_THEME,
 } from "./sceneTheme";
 import type { LightingMode } from "./viewer3d.types";
+
+// cspell:ignore fract bitangent
 
 interface StadiumEnvironmentProps {
     fieldWidth: number;
@@ -30,6 +33,27 @@ const SKY_FRAGMENT_SHADER = `
     void main() {
         float heightMix = smoothstep(-0.15, 0.72, normalize(worldPosition).y);
         gl_FragColor = vec4(mix(horizonColor, topColor, heightMix), 1.0);
+    }
+`;
+
+const STAR_VERTEX_SHADER = `
+    varying float starBrightness;
+    void main() {
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * viewPosition;
+        starBrightness = 0.62 + 0.38 * fract(sin(dot(position.xz, vec2(12.9898, 78.233))) * 43758.5453);
+        gl_PointSize = 1.35 + starBrightness * 1.65;
+    }
+`;
+
+const STAR_FRAGMENT_SHADER = `
+    varying float starBrightness;
+    void main() {
+        float distanceFromCenter = distance(gl_PointCoord, vec2(0.5));
+        if (distanceFromCenter > 0.5) discard;
+        float alpha = (1.0 - smoothstep(0.1, 0.5, distanceFromCenter)) * starBrightness;
+        vec3 starColor = mix(vec3(0.68, 0.80, 1.0), vec3(1.0, 0.93, 0.78), starBrightness);
+        gl_FragColor = vec4(starColor, alpha);
     }
 `;
 
@@ -65,17 +89,68 @@ function StorybookSky({
     );
 }
 
+function NightStars({ radius }: { radius: number }) {
+    const geometry = useMemo(() => {
+        const positions = new Float32Array(260 * 3);
+        let seed = 7831;
+        const random = () => {
+            seed = (seed * 16807) % 2147483647;
+            return (seed - 1) / 2147483646;
+        };
+
+        for (let index = 0; index < 260; index += 1) {
+            const angle = random() * Math.PI * 2;
+            const elevation = 0.08 + random() * 0.88;
+            const horizontalRadius = Math.sqrt(1 - elevation * elevation);
+            positions[index * 3] = Math.cos(angle) * horizontalRadius * radius;
+            positions[index * 3 + 1] = elevation * radius;
+            positions[index * 3 + 2] =
+                Math.sin(angle) * horizontalRadius * radius;
+        }
+
+        const nextGeometry = new THREE.BufferGeometry();
+        nextGeometry.setAttribute(
+            "position",
+            new THREE.BufferAttribute(positions, 3),
+        );
+        return nextGeometry;
+    }, [radius]);
+
+    useEffect(() => () => geometry.dispose(), [geometry]);
+
+    return (
+        <points geometry={geometry} frustumCulled={false} renderOrder={-900}>
+            <shaderMaterial
+                vertexShader={STAR_VERTEX_SHADER}
+                fragmentShader={STAR_FRAGMENT_SHADER}
+                transparent
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                toneMapped={false}
+            />
+        </points>
+    );
+}
+
 function Cloud({
     position,
     scale = 1,
+    lightingMode,
 }: {
     position: [number, number, number];
     scale?: number;
+    lightingMode: LightingMode;
 }) {
+    const color =
+        lightingMode === "night"
+            ? "#718098"
+            : lightingMode === "sunset"
+              ? "#ffd0af"
+              : STORYBOOK_THEME.cloudLight;
     return (
         <mesh position={position} scale={[scale * 3.6, scale, scale * 1.15]}>
             <icosahedronGeometry args={[1, 1]} />
-            <meshToonMaterial color={STORYBOOK_THEME.cloudLight} />
+            <meshToonMaterial color={color} />
         </mesh>
     );
 }
@@ -94,7 +169,33 @@ function CelestialBody({
         fieldWidth,
         fieldDepth,
     );
-    const radius = largestDimension * (isSunset ? 0.055 : 0.043);
+    const radius =
+        largestDimension * (isSunset ? 0.055 : isNight ? 0.05 : 0.043);
+    const moonDetails = useMemo(() => {
+        const towardField = new THREE.Vector3(...position).normalize().negate();
+        let tangent = new THREE.Vector3().crossVectors(
+            towardField,
+            new THREE.Vector3(0, 1, 0),
+        );
+        if (tangent.lengthSq() < 0.01) tangent = new THREE.Vector3(1, 0, 0);
+        tangent.normalize();
+        const bitangent = new THREE.Vector3()
+            .crossVectors(towardField, tangent)
+            .normalize();
+
+        return [
+            { x: -0.24, y: 0.18, size: 0.13 },
+            { x: 0.2, y: -0.08, size: 0.18 },
+            { x: 0.12, y: 0.3, size: 0.09 },
+        ].map(({ x, y, size }) => ({
+            position: towardField
+                .clone()
+                .multiplyScalar(radius * 0.94)
+                .addScaledVector(tangent, radius * x)
+                .addScaledVector(bitangent, radius * y),
+            size,
+        }));
+    }, [position, radius]);
 
     return (
         <group position={position}>
@@ -118,6 +219,18 @@ function CelestialBody({
                     toneMapped={false}
                 />
             </mesh>
+            {isNight &&
+                moonDetails.map((detail, index) => (
+                    <mesh key={index} position={detail.position}>
+                        <sphereGeometry args={[radius * detail.size, 10, 7]} />
+                        <meshBasicMaterial
+                            color="#879bb7"
+                            transparent
+                            opacity={0.48}
+                            toneMapped={false}
+                        />
+                    </mesh>
+                ))}
         </group>
     );
 }
@@ -213,11 +326,15 @@ function StadiumLightTower({
     height,
     face,
     lightingMode,
+    fieldWidth,
+    fieldDepth,
 }: {
     position: [number, number, number];
     height: number;
     face: 1 | -1;
     lightingMode: LightingMode;
+    fieldWidth: number;
+    fieldDepth: number;
 }) {
     const panelWidth = 7.8;
     const panelHeight = 3.2;
@@ -274,6 +391,37 @@ function StadiumLightTower({
         geometries.forEach((geometry) => geometry.dispose());
         return merged ?? new THREE.BufferGeometry();
     }, [face]);
+    const lightTarget = useMemo(() => new THREE.Object3D(), []);
+    const lightSource = useMemo(
+        () => new THREE.Vector3(0, height + 0.2, face * 0.8),
+        [face, height],
+    );
+    const lightTargetPosition = useMemo(
+        () =>
+            new THREE.Vector3(
+                -position[0] * 0.58,
+                0,
+                face * (fieldDepth / 2 + 7),
+            ),
+        [face, fieldDepth, position],
+    );
+    const beamTransform = useMemo(() => {
+        const direction = lightTargetPosition.clone().sub(lightSource);
+        const length = direction.length();
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, -1, 0),
+            direction.normalize(),
+        );
+        return {
+            length,
+            position: lightSource
+                .clone()
+                .add(lightTargetPosition)
+                .multiplyScalar(0.5),
+            quaternion,
+            radius: Math.min(fieldWidth, fieldDepth) * 0.13,
+        };
+    }, [fieldDepth, fieldWidth, lightSource, lightTargetPosition]);
 
     useEffect(() => {
         return () => {
@@ -308,6 +456,10 @@ function StadiumLightTower({
             </mesh>
             {lightingMode === "night" && (
                 <>
+                    <primitive
+                        object={lightTarget}
+                        position={lightTargetPosition}
+                    />
                     <mesh
                         position={[0, height + 0.15, face * 0.42]}
                         rotation={[0.12 * face, 0, 0]}
@@ -327,13 +479,38 @@ function StadiumLightTower({
                     </mesh>
                     <spotLight
                         position={[0, height + 0.2, face * 0.8]}
+                        target={lightTarget}
                         color="#d9ecff"
-                        intensity={420}
-                        distance={height * 6}
-                        decay={1.35}
-                        angle={0.62}
-                        penumbra={0.72}
+                        intensity={720}
+                        distance={beamTransform.length * 1.35}
+                        decay={1.18}
+                        angle={0.48}
+                        penumbra={0.82}
                     />
+                    <mesh
+                        position={beamTransform.position}
+                        quaternion={beamTransform.quaternion}
+                        renderOrder={-2}
+                    >
+                        <coneGeometry
+                            args={[
+                                beamTransform.radius,
+                                beamTransform.length,
+                                10,
+                                1,
+                                true,
+                            ]}
+                        />
+                        <meshBasicMaterial
+                            color="#b8dcff"
+                            transparent
+                            opacity={0.028}
+                            depthWrite={false}
+                            blending={THREE.AdditiveBlending}
+                            side={THREE.DoubleSide}
+                            toneMapped={false}
+                        />
+                    </mesh>
                 </>
             )}
         </group>
@@ -346,6 +523,10 @@ export default function StadiumEnvironment({
     lightingMode,
 }: StadiumEnvironmentProps) {
     const largestDimension = Math.max(fieldWidth, fieldDepth);
+    const stadiumLightPositions = getStadiumLightPositions(
+        fieldWidth,
+        fieldDepth,
+    );
     const treePositions = [
         [-fieldWidth * 0.58, -fieldDepth * 0.68, 1.3],
         [-fieldWidth * 0.48, -fieldDepth * 0.9, 1.8],
@@ -360,6 +541,9 @@ export default function StadiumEnvironment({
                 radius={largestDimension * 5}
                 lightingMode={lightingMode}
             />
+            {lightingMode === "night" && (
+                <NightStars radius={largestDimension * 4.65} />
+            )}
             <CelestialBody
                 fieldWidth={fieldWidth}
                 fieldDepth={fieldDepth}
@@ -397,21 +581,17 @@ export default function StadiumEnvironment({
                 width={fieldWidth * 0.62}
                 facing={-1}
             />
-            {[-0.43, 0.43].flatMap((xFactor) =>
-                ([-1, 1] as const).map((zFactor) => (
-                    <StadiumLightTower
-                        key={`${xFactor}-${zFactor}`}
-                        position={[
-                            fieldWidth * xFactor,
-                            0,
-                            zFactor * (fieldDepth / 2 + 7),
-                        ]}
-                        height={largestDimension * 0.2}
-                        face={zFactor === 1 ? -1 : 1}
-                        lightingMode={lightingMode}
-                    />
-                )),
-            )}
+            {stadiumLightPositions.map(({ x, y, z, face }) => (
+                <StadiumLightTower
+                    key={`${x}-${z}`}
+                    position={[x, 0, z]}
+                    height={y}
+                    face={face}
+                    lightingMode={lightingMode}
+                    fieldWidth={fieldWidth}
+                    fieldDepth={fieldDepth}
+                />
+            ))}
 
             {treePositions.map(([x, z, scale], index) => (
                 <Tree
@@ -443,6 +623,7 @@ export default function StadiumEnvironment({
                     -fieldDepth * 1.8,
                 ]}
                 scale={largestDimension * 0.025}
+                lightingMode={lightingMode}
             />
             <Cloud
                 position={[
@@ -451,6 +632,7 @@ export default function StadiumEnvironment({
                     -fieldDepth * 2.1,
                 ]}
                 scale={largestDimension * 0.018}
+                lightingMode={lightingMode}
             />
             <Cloud
                 position={[
@@ -459,6 +641,7 @@ export default function StadiumEnvironment({
                     fieldDepth * 0.5,
                 ]}
                 scale={largestDimension * 0.014}
+                lightingMode={lightingMode}
             />
         </group>
     );

@@ -67,15 +67,15 @@ export const LIGHTING_THEMES = {
     night: {
         skyTop: "#071426",
         skyHorizon: "#263b55",
-        ambient: "#7891b5",
+        ambient: "#61799c",
         ground: "#263c35",
         key: "#b9d7ff",
-        ambientIntensity: 0.28,
-        hemisphereIntensity: 0.48,
-        keyIntensity: 1.15,
+        ambientIntensity: 0.22,
+        hemisphereIntensity: 0.36,
+        keyIntensity: 0.48,
         rim: "#5f86c9",
-        rimIntensity: 0.45,
-        exposure: 0.78,
+        rimIntensity: 0.34,
+        exposure: 0.84,
         sunHeight: 0.58,
         sunX: 0.58,
         sunZ: -0.92,
@@ -99,6 +99,29 @@ export const getSceneLightPosition = (
         largestDimension * lighting.sunHeight * distance,
         largestDimension * lighting.sunZ * distance,
     ];
+};
+
+export interface StadiumLightPosition {
+    x: number;
+    y: number;
+    z: number;
+    face: 1 | -1;
+}
+
+/** Shared tower layout used by the models, light beams, and marcher shadows. */
+export const getStadiumLightPositions = (
+    fieldWidth: number,
+    fieldDepth: number,
+): StadiumLightPosition[] => {
+    const height = Math.max(fieldWidth, fieldDepth) * 0.2;
+    return [-0.43, 0.43].flatMap((xFactor) =>
+        ([-1, 1] as const).map((zFactor) => ({
+            x: fieldWidth * xFactor,
+            y: height,
+            z: zFactor * (fieldDepth / 2 + 7),
+            face: (zFactor === 1 ? -1 : 1) as 1 | -1,
+        })),
+    );
 };
 
 export const CINEMATIC_OVERLAYS = {

@@ -24,6 +24,9 @@ export default function LightingRig({
         largestDimension * 0.34,
         -lightPosition[2],
     ];
+    const isSunset = mode === "sunset";
+    const shadowWidth = fieldWidth * (isSunset ? 0.56 : 0.62);
+    const shadowDepth = fieldDepth * (isSunset ? 0.82 : 1.15);
     const shadowWarmupFrames = useRef(0);
 
     useEffect(() => {
@@ -71,12 +74,13 @@ export default function LightingRig({
                 shadow-mapSize-height={2048}
                 shadow-camera-near={1}
                 shadow-camera-far={largestDimension * 2.5}
-                shadow-camera-left={-fieldWidth * 0.62}
-                shadow-camera-right={fieldWidth * 0.62}
-                shadow-camera-top={fieldDepth * 1.15}
-                shadow-camera-bottom={-fieldDepth * 1.15}
-                shadow-normalBias={0.025}
+                shadow-camera-left={-shadowWidth}
+                shadow-camera-right={shadowWidth}
+                shadow-camera-top={shadowDepth}
+                shadow-camera-bottom={-shadowDepth}
+                shadow-normalBias={isSunset ? 0.015 : 0.025}
                 shadow-bias={-0.00025}
+                shadow-radius={isSunset ? 2.4 : 1.4}
             />
             <directionalLight
                 color={lighting.rim}

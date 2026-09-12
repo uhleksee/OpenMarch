@@ -51,6 +51,7 @@ import { MarcherTimeline } from "@/utilities/Keyframes";
 import { MarcherAppearanceByIdMap } from "@/hooks/queries/useMarcherAppearances";
 import LightingRig from "./LightingRig";
 import StadiumEnvironment from "./StadiumEnvironment";
+import MarcherShadows, { type MarcherShadowGroupRef } from "./MarcherShadows";
 import { CINEMATIC_OVERLAYS, LIGHTING_THEMES } from "./sceneTheme";
 import {
     DEFAULT_VIEWER_3D_PREFERENCES,
@@ -339,10 +340,9 @@ interface MarcherFormationProps {
     uniformColorMode: UniformColorMode;
     uniformColor: string;
     showLabels: boolean;
-}
-
-interface MarcherGroupRef {
-    current: THREE.Group | null;
+    lightingMode: LightingMode;
+    fieldWidth: number;
+    fieldDepth: number;
 }
 
 function MarcherFormation({
@@ -355,11 +355,18 @@ function MarcherFormation({
     uniformColorMode,
     uniformColor,
     showLabels,
+    lightingMode,
+    fieldWidth,
+    fieldDepth,
 }: MarcherFormationProps) {
-    const marcherRefs = useRef(new Map<number, MarcherGroupRef>());
+    const marcherRefs = useRef(new Map<number, MarcherShadowGroupRef>());
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
     const { isPlaying } = useIsPlaying()!;
     const queryClient = useQueryClient();
+    const marcherIds = useMemo(
+        () => marchers.map((marcher) => marcher.id),
+        [marchers],
+    );
 
     const setPausedPositions = useCallback(() => {
         for (const marcher of marchers) {
@@ -464,6 +471,13 @@ function MarcherFormation({
 
     return (
         <group>
+            <MarcherShadows
+                marcherIds={marcherIds}
+                marcherRefs={marcherRefs.current}
+                mode={lightingMode}
+                fieldWidth={fieldWidth}
+                fieldDepth={fieldDepth}
+            />
             {marchers.map((marcher) => {
                 const marcherPage = marcherPages[marcher.id];
                 if (!marcherPage) return null;
@@ -596,6 +610,9 @@ export default function ThreeDViewer() {
                         uniformColorMode={preferences.uniformColorMode}
                         uniformColor={preferences.uniformColor}
                         showLabels={preferences.showLabels}
+                        lightingMode={preferences.lightingMode}
+                        fieldWidth={width}
+                        fieldDepth={depth}
                     />
                 )}
                 <MemoizedCameraRig
