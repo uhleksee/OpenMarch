@@ -39,14 +39,18 @@ export default function TimelineContainer() {
 
         if (!container || !selectedPageElement) return;
 
-        container.style.scrollBehavior = "smooth";
+        // Manual page changes should feel immediate. Playback has its own
+        // smooth-follow path below, so using smooth scrolling here only adds a
+        // browser-controlled delay after a click.
+        container.style.scrollBehavior = "auto";
         selectedPageElement.scrollIntoView({
             block: "nearest",
             inline: "center",
+            behavior: "auto",
         });
 
         return () => {
-            container.style.scrollBehavior = "smooth";
+            container.style.scrollBehavior = "";
             container.style.transition = "";
         };
     }, [selectedPage, isPlaying]);

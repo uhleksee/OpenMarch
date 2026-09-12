@@ -32,7 +32,9 @@ export default function PageTimeline() {
     const { uiSettings } = useUiSettingsStore();
     const { isPlaying } = useIsPlaying()!;
     const { selectedPage, setSelectedPage } = useSelectedPage()!;
-    const { setSelectedShapePageIds } = useSelectionStore()!;
+    const setSelectedShapePageIds = useSelectionStore(
+        (state) => state.setSelectedShapePageIds,
+    );
     const { isFullscreen } = useFullscreenStore();
     const { pages, beats } = useTimingObjects()!;
     const { mutate: updatePages } = useMutation(
