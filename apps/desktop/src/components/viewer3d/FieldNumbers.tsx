@@ -2,7 +2,11 @@ import type { FieldProperties } from "@openmarch/core";
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { getFieldWorldDimensions } from "./viewer3d.utils";
+import {
+    canvasCoordinatesToWorld,
+    getFieldStepWorldSize,
+    getFieldWorldDimensions,
+} from "./viewer3d.utils";
 import { STORYBOOK_THEME } from "./sceneTheme";
 
 type SegmentName = "a" | "b" | "c" | "d" | "e" | "f" | "g";
@@ -33,6 +37,24 @@ const SEGMENT_LAYOUT: Record<
     g: { position: [0, 0, 0], size: [0.78, 0.035, 0.15] },
 };
 
+const MAX_FIELD_NUMBER_MARKERS = 256;
+
+const getBoundedMarkers = (
+    markers: FieldNumberMarker[],
+): FieldNumberMarker[] => {
+    if (markers.length <= MAX_FIELD_NUMBER_MARKERS) return markers;
+    return Array.from(
+        { length: MAX_FIELD_NUMBER_MARKERS },
+        (_, index) =>
+            markers[
+                Math.round(
+                    (index * (markers.length - 1)) /
+                        (MAX_FIELD_NUMBER_MARKERS - 1),
+                )
+            ],
+    );
+};
+
 export interface FieldNumberMarker {
     key: string;
     label: string;
@@ -51,30 +73,47 @@ export const getFieldNumberMarkers = (
     const homeInside = coordinates.homeStepsFromFrontToInside;
     const awayInside = coordinates.awayStepsFromFrontToInside;
     const awayOutside = coordinates.awayStepsFromFrontToOutside;
+    const stepWorldSize = getFieldStepWorldSize(fieldProperties);
     const markers: FieldNumberMarker[] = [];
 
     for (const checkpoint of fieldProperties.xCheckpoints) {
         const label = checkpoint.fieldLabel;
         if (!checkpoint.visible || !label || !/^\d{1,2}$/.test(label)) continue;
+        const [x] = canvasCoordinatesToWorld(
+            {
+                x:
+                    fieldProperties.centerFrontPoint.xPixels +
+                    checkpoint.stepsFromCenterFront *
+                        fieldProperties.pixelsPerStep,
+                y: fieldProperties.centerFrontPoint.yPixels,
+            },
+            fieldProperties,
+        );
 
         if (homeOutside !== undefined && homeInside !== undefined) {
             markers.push({
                 key: `home-${checkpoint.id}`,
                 label,
-                x: checkpoint.stepsFromCenterFront,
-                z: depth / 2 - (homeOutside + homeInside) / 2,
+                x,
+                z: depth / 2 - ((homeOutside + homeInside) / 2) * stepWorldSize,
                 rotation: 0,
-                scale: Math.max(1.1, (homeInside - homeOutside) / 2.1),
+                scale: Math.max(
+                    1.1,
+                    ((homeInside - homeOutside) * stepWorldSize) / 2.1,
+                ),
             });
         }
         if (awayInside !== undefined && awayOutside !== undefined) {
             markers.push({
                 key: `away-${checkpoint.id}`,
                 label,
-                x: checkpoint.stepsFromCenterFront,
-                z: depth / 2 - (awayInside + awayOutside) / 2,
+                x,
+                z: depth / 2 - ((awayInside + awayOutside) / 2) * stepWorldSize,
                 rotation: Math.PI,
-                scale: Math.max(1.1, (awayOutside - awayInside) / 2.1),
+                scale: Math.max(
+                    1.1,
+                    ((awayOutside - awayInside) * stepWorldSize) / 2.1,
+                ),
             });
         }
     }
@@ -82,7 +121,9 @@ export const getFieldNumberMarkers = (
     return markers;
 };
 
-const buildFieldNumberGeometry = (fieldProperties: FieldProperties) => {
+export const buildFieldNumberGeometry = (
+    fieldProperties: FieldProperties,
+): THREE.BufferGeometry | null => {
     const segmentGeometries: THREE.BufferGeometry[] = [];
     const markerMatrix = new THREE.Matrix4();
     const localMatrix = new THREE.Matrix4();
@@ -90,7 +131,10 @@ const buildFieldNumberGeometry = (fieldProperties: FieldProperties) => {
     const markerQuaternion = new THREE.Quaternion();
     const markerScale = new THREE.Vector3();
 
-    for (const marker of getFieldNumberMarkers(fieldProperties)) {
+    const markers = getBoundedMarkers(getFieldNumberMarkers(fieldProperties));
+    if (markers.length === 0) return null;
+
+    for (const marker of markers) {
         markerQuaternion.setFromEuler(new THREE.Euler(0, marker.rotation, 0));
         markerScale.setScalar(marker.scale);
         markerMatrix.compose(
@@ -117,6 +161,7 @@ const buildFieldNumberGeometry = (fieldProperties: FieldProperties) => {
         });
     }
 
+    if (segmentGeometries.length === 0) return null;
     const merged = mergeGeometries(segmentGeometries, false);
     segmentGeometries.forEach((geometry) => geometry.dispose());
     return merged ?? new THREE.BufferGeometry();
@@ -132,7 +177,14 @@ export default function FieldNumbers({
         [fieldProperties],
     );
 
-    useEffect(() => () => geometry.dispose(), [geometry]);
+    useEffect(
+        () => () => {
+            geometry?.dispose();
+        },
+        [geometry],
+    );
+
+    if (!geometry) return null;
 
     return (
         <mesh geometry={geometry}>

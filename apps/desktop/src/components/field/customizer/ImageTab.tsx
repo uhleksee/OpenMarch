@@ -13,6 +13,8 @@ import FormField, { StaticFormField } from "../../ui/FormField";
 import { inputClassname } from "./utils";
 import clsx from "clsx";
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { fieldPropertiesKeys } from "@/hooks/queries/useFieldProperties";
 
 interface ImageTabProps {
     currentFieldProperties: FieldProperties;
@@ -24,6 +26,7 @@ export function ImageTab({
     updateFieldProperties,
 }: ImageTabProps) {
     const { t } = useTolgee();
+    const queryClient = useQueryClient();
     const [opacityValue, setOpacityValue] = useState(
         currentFieldProperties.backgroundImageOpacity,
     );
@@ -172,6 +175,10 @@ export function ImageTab({
                             const arrayBuffer = await file.arrayBuffer();
                             const raw = new Uint8Array(arrayBuffer);
                             await updateFieldPropertiesImage(raw);
+                            queryClient.setQueryData(
+                                fieldPropertiesKeys.image(),
+                                raw,
+                            );
                             updateFieldProperties(
                                 new FieldProperties({
                                     ...currentFieldProperties,

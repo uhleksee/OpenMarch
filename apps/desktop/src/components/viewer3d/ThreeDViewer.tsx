@@ -19,6 +19,7 @@ import * as THREE from "three";
 import clsx from "clsx";
 import {
     allMarchersQueryOptions,
+    fieldPropertiesImageQueryOptions,
     fieldPropertiesQueryOptions,
     marcherAppearancesQueryOptions,
     marcherPageKeys,
@@ -40,12 +41,15 @@ import Marcher3D, {
 } from "./Marcher3D";
 import {
     CameraPreset,
+    canUseIndoorArena,
     canvasCoordinatesToWorld,
     getCameraPresetConfiguration,
+    getField3DValidationError,
     getFieldWorldDimensions,
     getLegFacingOffset,
     hasWorldPositionChanged,
     rgbaStringToThreeColor,
+    resolveVenue,
 } from "./viewer3d.utils";
 import { FieldProperties } from "@openmarch/core";
 import Marcher from "@/global/classes/Marcher";
@@ -59,8 +63,10 @@ import { CINEMATIC_OVERLAYS, LIGHTING_THEMES } from "./sceneTheme";
 import {
     DEFAULT_VIEWER_3D_PREFERENCES,
     type LightingMode,
+    type ResolvedVenue,
     type UniformColorMode,
     type UniformStyle,
+    type VenuePreference,
 } from "./viewer3d.types";
 import {
     threeDiagnosticSnapshot,
@@ -69,6 +75,7 @@ import {
 import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 import type Beat from "@/global/classes/Beat";
 import { createMarchBeatTimeline, getMarchStepAtTime } from "./marchBeatPhase";
+import IndoorArenaEnvironment from "./IndoorArenaEnvironment";
 
 const CAMERA_LABELS: Record<CameraPreset, string> = {
     overhead: "Overhead",
@@ -160,6 +167,9 @@ const loadViewerPreferences = () => {
             )
                 ? (parsed.lightingMode as LightingMode)
                 : DEFAULT_VIEWER_3D_PREFERENCES.lightingMode,
+            venue: ["auto", "outdoor", "indoor"].includes(parsed.venue ?? "")
+                ? (parsed.venue as VenuePreference)
+                : DEFAULT_VIEWER_3D_PREFERENCES.venue,
         };
     } catch {
         return DEFAULT_VIEWER_3D_PREFERENCES;
@@ -200,7 +210,7 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
         // A tighter depth range prevents the field layers from fighting when
         // viewed from the overhead camera or from far away.
         camera.near = 0.5;
-        camera.far = Math.max(fieldWidth, fieldDepth) * 12;
+        camera.far = Math.max(25, Math.max(fieldWidth, fieldDepth) * 12);
 
         if (!initializedRef.current) {
             camera.position.set(...configuration.position);
@@ -276,7 +286,7 @@ function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
             }}
             screenSpacePanning
             minDistance={2}
-            maxDistance={Math.max(fieldWidth, fieldDepth) * 4}
+            maxDistance={Math.max(8, Math.max(fieldWidth, fieldDepth) * 4)}
             maxPolarAngle={Math.PI / 2 - 0.015}
         />
     );
@@ -292,6 +302,8 @@ interface StaticFieldSceneProps {
     showHalfLines: boolean;
     lightingMode: LightingMode;
     showEnvironment: boolean;
+    fieldImage: Uint8Array | null;
+    venue: ResolvedVenue;
 }
 
 const StaticFieldScene = memo(function StaticFieldScene({
@@ -302,34 +314,45 @@ const StaticFieldScene = memo(function StaticFieldScene({
     showHalfLines,
     lightingMode,
     showEnvironment,
+    fieldImage,
+    venue,
 }: StaticFieldSceneProps) {
     const lighting = LIGHTING_THEMES[lightingMode];
+    const largestDimension = Math.max(fieldWidth, fieldDepth);
     return (
         <>
-            <fog
-                attach="fog"
-                args={[
-                    lighting.skyHorizon,
-                    fieldWidth * lighting.fogNearFactor,
-                    fieldWidth * lighting.fogFarFactor,
-                ]}
-            />
+            {venue === "outdoor" && (
+                <fog
+                    attach="fog"
+                    args={[
+                        lighting.skyHorizon,
+                        largestDimension * lighting.fogNearFactor,
+                        largestDimension * lighting.fogFarFactor,
+                    ]}
+                />
+            )}
             <LightingRig
                 fieldWidth={fieldWidth}
                 fieldDepth={fieldDepth}
                 mode={lightingMode}
+                venue={venue}
             />
-            {showEnvironment && (
+            {showEnvironment && venue === "outdoor" && (
                 <StadiumEnvironment
                     fieldWidth={fieldWidth}
                     fieldDepth={fieldDepth}
                     lightingMode={lightingMode}
                 />
             )}
+            {showEnvironment && venue === "indoor" && (
+                <IndoorArenaEnvironment lightingMode={lightingMode} />
+            )}
             <Field3D
                 fieldProperties={fieldProperties}
                 showGrid={showGrid}
                 showHalfLines={showHalfLines}
+                fieldImage={fieldImage}
+                venue={venue}
             />
         </>
     );
@@ -349,6 +372,7 @@ interface MarcherFormationProps {
     lightingMode: LightingMode;
     fieldWidth: number;
     fieldDepth: number;
+    venue: ResolvedVenue;
 }
 
 function MarcherFormation({
@@ -365,6 +389,7 @@ function MarcherFormation({
     lightingMode,
     fieldWidth,
     fieldDepth,
+    venue,
 }: MarcherFormationProps) {
     const marcherRefs = useRef(new Map<number, MarcherShadowGroupRef>());
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
@@ -497,6 +522,7 @@ function MarcherFormation({
                 mode={lightingMode}
                 fieldWidth={fieldWidth}
                 fieldDepth={fieldDepth}
+                venue={venue}
             />
             {marchers.map((marcher) => {
                 const marcherPage = marcherPages[marcher.id];
@@ -562,6 +588,11 @@ export default function ThreeDViewer() {
     const { data: fieldProperties } = useQuery(
         fieldPropertiesQueryOptions(databaseReady),
     );
+    const { data: fieldImage = null } = useQuery(
+        fieldPropertiesImageQueryOptions(
+            databaseReady && (fieldProperties?.showFieldImage ?? false),
+        ),
+    );
     const { data: marchers = [] } = useQuery(allMarchersQueryOptions());
     const { data: marcherPages = {} } = useQuery({
         ...marcherPagesByPageQueryOptions(selectedPage?.id),
@@ -588,7 +619,23 @@ export default function ThreeDViewer() {
         );
     }
 
+    const fieldValidationError = getField3DValidationError(fieldProperties);
+    if (fieldValidationError) {
+        return (
+            <div className="bg-bg-2 text-text flex h-full w-full flex-col items-center justify-center gap-3 px-8 text-center">
+                <p className="font-semibold">
+                    This field cannot open in 3D yet.
+                </p>
+                <p className="text-text/70 max-w-lg text-sm">
+                    {fieldValidationError}
+                </p>
+            </div>
+        );
+    }
+
     const { width, depth } = getFieldWorldDimensions(fieldProperties);
+    const indoorAvailable = canUseIndoorArena(fieldProperties);
+    const venue = resolveVenue(preferences.venue, fieldProperties);
     const showEnvironment =
         !diagnosticsEnabled ||
         diagnosticSceneMode === "full" ||
@@ -619,6 +666,8 @@ export default function ThreeDViewer() {
                     showHalfLines={uiSettings.halfLines}
                     lightingMode={preferences.lightingMode}
                     showEnvironment={showEnvironment}
+                    fieldImage={fieldImage}
+                    venue={venue}
                 />
                 {showPerformers && (
                     <MarcherFormation
@@ -635,6 +684,7 @@ export default function ThreeDViewer() {
                         lightingMode={preferences.lightingMode}
                         fieldWidth={width}
                         fieldDepth={depth}
+                        venue={venue}
                     />
                 )}
                 <MemoizedCameraRig
@@ -696,6 +746,29 @@ export default function ThreeDViewer() {
                             <option value="classic">Classic</option>
                             <option value="modern">Modern</option>
                             <option value="summer">Summer</option>
+                        </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                        <span className="text-text/70">Venue</span>
+                        <select
+                            value={preferences.venue}
+                            onChange={(event) =>
+                                setPreferences((current) => ({
+                                    ...current,
+                                    venue: event.target
+                                        .value as VenuePreference,
+                                }))
+                            }
+                            className="border-stroke bg-bg-2 rounded-4 border px-3 py-2"
+                        >
+                            <option value="auto">Auto</option>
+                            <option value="outdoor">Outdoor</option>
+                            <option value="indoor" disabled={!indoorAvailable}>
+                                {indoorAvailable
+                                    ? "Indoor arena"
+                                    : "Indoor (field too large)"}
+                            </option>
                         </select>
                     </label>
 

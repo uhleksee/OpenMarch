@@ -2,6 +2,7 @@ import { FieldProperties } from "@openmarch/core";
 import { ReadableCoords } from "@/global/classes/ReadableCoords";
 import {
     getFieldProperties,
+    getFieldPropertiesImage,
     updateFieldProperties,
 } from "@/global/classes/FieldProperties";
 import { DEFAULT_STALE_TIME } from "./constants";
@@ -12,6 +13,9 @@ export const fieldPropertiesKeys = {
     all: ["field_properties"] as const,
     details: () => [...fieldPropertiesKeys.all, "detail"] as const,
     detail: () => [...fieldPropertiesKeys.details()] as const,
+    // Keep image bytes separate from ordinary field-property invalidation. A
+    // custom-field edit should not decode and upload a large tarp again.
+    image: () => [...fieldPropertiesKeys.all, "image"] as const,
 };
 
 // Query functions
@@ -40,6 +44,13 @@ export const fieldPropertiesQueryOptions = (enabled = true) => ({
         ReadableCoords.setFieldProperties(fieldProperties);
         return fieldProperties;
     },
+    staleTime: DEFAULT_STALE_TIME,
+    enabled,
+});
+
+export const fieldPropertiesImageQueryOptions = (enabled = true) => ({
+    queryKey: fieldPropertiesKeys.image(),
+    queryFn: getFieldPropertiesImage,
     staleTime: DEFAULT_STALE_TIME,
     enabled,
 });

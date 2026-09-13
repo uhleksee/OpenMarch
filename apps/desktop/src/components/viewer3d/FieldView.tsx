@@ -1,4 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import {
+    Component,
+    lazy,
+    Suspense,
+    useEffect,
+    useState,
+    type ReactNode,
+} from "react";
 import Canvas from "@/components/canvas/Canvas";
 import CanvasZoomControls from "@/components/canvas/CanvasZoomControls";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
@@ -6,6 +13,38 @@ import clsx from "clsx";
 import PerformanceDiagnosticsPanel from "./PerformanceDiagnosticsPanel";
 
 const ThreeDViewer = lazy(() => import("./ThreeDViewer"));
+
+class ThreeDViewerErrorBoundary extends Component<
+    { children: ReactNode },
+    { failed: boolean }
+> {
+    state = { failed: false };
+
+    static getDerivedStateFromError() {
+        return { failed: true };
+    }
+
+    componentDidCatch(error: Error) {
+        console.error("The 3D viewer could not render this field", error);
+    }
+
+    render() {
+        if (this.state.failed) {
+            return (
+                <div className="bg-bg-2 text-text flex h-full w-full flex-col items-center justify-center gap-3 px-8 text-center">
+                    <p className="font-semibold">
+                        The 3D viewer could not render this field.
+                    </p>
+                    <p className="text-text/70 max-w-lg text-sm">
+                        Your drill is safe. Switch back to 2D, adjust the custom
+                        field settings, and try 3D again.
+                    </p>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 
 export type FieldViewMode = "2d" | "3d";
 
@@ -55,15 +94,17 @@ export default function FieldView({ canvas, onCanvasReady }: FieldViewProps) {
                 onCanvasReady={onCanvasReady}
             />
             {viewMode === "3d" && (
-                <Suspense
-                    fallback={
-                        <div className="bg-bg-2 text-text flex h-full w-full items-center justify-center">
-                            Loading 3D field…
-                        </div>
-                    }
-                >
-                    <ThreeDViewer />
-                </Suspense>
+                <ThreeDViewerErrorBoundary>
+                    <Suspense
+                        fallback={
+                            <div className="bg-bg-2 text-text flex h-full w-full items-center justify-center">
+                                Loading 3D field…
+                            </div>
+                        }
+                    >
+                        <ThreeDViewer />
+                    </Suspense>
+                </ThreeDViewerErrorBoundary>
             )}
 
             <div

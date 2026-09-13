@@ -2,7 +2,11 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { getSceneLightPosition, getStadiumLightPositions } from "./sceneTheme";
-import type { LightingMode } from "./viewer3d.types";
+import {
+    getIndoorKeyLightPosition,
+    INDOOR_ARENA_LIGHT_POSITIONS,
+} from "./viewer3d.utils";
+import type { LightingMode, ResolvedVenue } from "./viewer3d.types";
 
 export interface MarcherShadowGroupRef {
     current: THREE.Group | null;
@@ -14,6 +18,7 @@ interface MarcherShadowsProps {
     mode: LightingMode;
     fieldWidth: number;
     fieldDepth: number;
+    venue: ResolvedVenue;
 }
 
 interface ShadowLayer {
@@ -114,6 +119,7 @@ export default function MarcherShadows({
     mode,
     fieldWidth,
     fieldDepth,
+    venue,
 }: MarcherShadowsProps) {
     const meshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
     const lastStatesRef = useRef<Float32Array>(new Float32Array(0));
@@ -131,7 +137,10 @@ export default function MarcherShadows({
 
     const layers = useMemo<ShadowLayer[]>(() => {
         const largestDimension = Math.max(fieldWidth, fieldDepth);
-        const sceneLight = getSceneLightPosition(mode, fieldWidth, fieldDepth);
+        const sceneLight =
+            venue === "indoor"
+                ? getIndoorKeyLightPosition(fieldWidth, fieldDepth)
+                : getSceneLightPosition(mode, fieldWidth, fieldDepth);
         const awayFromSceneLight = new THREE.Vector3(
             -sceneLight[0],
             0,
@@ -139,17 +148,19 @@ export default function MarcherShadows({
         ).normalize();
 
         if (mode === "night") {
-            return getStadiumLightPositions(fieldWidth, fieldDepth).map(
-                ({ x, y, z }, index) => ({
-                    material: NIGHT_SHADOW_MATERIAL,
-                    width: 0.92,
-                    length: 3.9,
-                    distanceLengthFactor: 0.022,
-                    maxLength: 5.8,
-                    yOffset: 0.032 + index * 0.0012,
-                    lightPosition: new THREE.Vector3(x, y, z),
-                }),
-            );
+            const lightPositions =
+                venue === "indoor"
+                    ? INDOOR_ARENA_LIGHT_POSITIONS
+                    : getStadiumLightPositions(fieldWidth, fieldDepth);
+            return lightPositions.map(({ x, y, z }, index) => ({
+                material: NIGHT_SHADOW_MATERIAL,
+                width: 0.92,
+                length: 3.9,
+                distanceLengthFactor: 0.022,
+                maxLength: 5.8,
+                yOffset: 0.032 + index * 0.0012,
+                lightPosition: new THREE.Vector3(x, y, z),
+            }));
         }
 
         if (mode === "sunset") {
@@ -174,7 +185,7 @@ export default function MarcherShadows({
                 fixedDirection: awayFromSceneLight,
             },
         ];
-    }, [fieldDepth, fieldWidth, mode]);
+    }, [fieldDepth, fieldWidth, mode, venue]);
 
     useFrame(() => {
         if (
