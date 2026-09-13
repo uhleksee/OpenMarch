@@ -11,8 +11,10 @@ interface IndoorArenaEnvironmentProps {
     lightingMode: LightingMode;
 }
 
-const ARENA_WIDTH = INDOOR_ARENA_CAPACITY.width + 12;
-const ARENA_DEPTH = INDOOR_ARENA_CAPACITY.depth + 14;
+// Keep the regulation 90 × 50 ft performance floor centered inside a roomier
+// arena bowl, with enough runoff for cameras and staging around every edge.
+const ARENA_WIDTH = INDOOR_ARENA_CAPACITY.width + 28;
+const ARENA_DEPTH = INDOOR_ARENA_CAPACITY.depth + 30;
 const WALL_HEIGHT = 22;
 
 const mergeBoxes = (
@@ -55,8 +57,8 @@ export default function IndoorArenaEnvironment({
         [],
     );
     const bleacherGeometry = useMemo(() => {
-        const tiers = Array.from({ length: 7 }, (_, tier) => ({
-            size: [INDOOR_ARENA_CAPACITY.width * 0.72, 0.42, 1.15] as [
+        const tiers = Array.from({ length: 9 }, (_, tier) => ({
+            size: [INDOOR_ARENA_CAPACITY.width * 0.86, 0.42, 1.15] as [
                 number,
                 number,
                 number,
@@ -77,7 +79,9 @@ export default function IndoorArenaEnvironment({
                 position: [x, WALL_HEIGHT / 2, -ARENA_DEPTH / 2 + 0.8],
             });
         }
-        for (const z of [-16, -8, 0, 8, 16]) {
+        for (const z of [-0.4, -0.2, 0, 0.2, 0.4].map(
+            (offset) => offset * ARENA_DEPTH,
+        )) {
             boxes.push({
                 size: [ARENA_WIDTH, 0.3, 0.3],
                 position: [0, WALL_HEIGHT - 1.2, z],
@@ -125,7 +129,7 @@ export default function IndoorArenaEnvironment({
         <group>
             <mesh position={[0, -0.3, 0]} receiveShadow>
                 <boxGeometry args={[ARENA_WIDTH, 0.34, ARENA_DEPTH]} />
-                <meshToonMaterial color="#a77d55" />
+                <meshToonMaterial color="#98643f" />
             </mesh>
 
             <mesh geometry={shellGeometry} castShadow receiveShadow>

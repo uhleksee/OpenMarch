@@ -418,7 +418,7 @@ export default function Field3D({
                 <boxGeometry args={[width, 0.24, depth]} />
                 <meshToonMaterial
                     color={
-                        indoorSurface ? "#17191d" : STORYBOOK_THEME.grassDark
+                        indoorSurface ? "#70452b" : STORYBOOK_THEME.grassDark
                     }
                 />
             </mesh>
@@ -429,7 +429,7 @@ export default function Field3D({
                     receiveShadow
                 >
                     <planeGeometry args={[width, depth]} />
-                    <meshToonMaterial color="#26282d" />
+                    <meshToonMaterial color="#bd8754" />
                 </mesh>
             ) : (
                 <mesh
@@ -454,7 +454,7 @@ export default function Field3D({
             {showGrid && (
                 <lineSegments geometry={minorGridGeometry}>
                     <lineBasicMaterial
-                        color="#78947d"
+                        color={indoorSurface ? "#f4dec1" : "#78947d"}
                         transparent
                         opacity={0.34}
                     />
@@ -463,7 +463,7 @@ export default function Field3D({
             {showHalfLines && (
                 <lineSegments geometry={halfLineGeometry}>
                     <lineBasicMaterial
-                        color="#b5c8b6"
+                        color={indoorSurface ? "#fff0d5" : "#b5c8b6"}
                         transparent
                         opacity={0.58}
                     />
