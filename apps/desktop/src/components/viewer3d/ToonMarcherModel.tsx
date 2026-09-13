@@ -56,12 +56,17 @@ const MODEL_GEOMETRIES = {
     headAndNeck: new THREE.LatheGeometry(HEAD_AND_NECK_PROFILE, 8),
     shako: new THREE.CylinderGeometry(0.305, 0.274, 0.56, 8),
     shakoBrim: new THREE.BoxGeometry(0.61, 0.06, 0.28),
-    shakoBadge: new THREE.BoxGeometry(0.38, 0.12, 0.05),
     plume: new THREE.IcosahedronGeometry(0.14, 1),
     plumeCenter: new THREE.IcosahedronGeometry(0.17, 1),
     cap: new THREE.SphereGeometry(0.31, 8, 6, 0, Math.PI * 2, 0, 1.48),
     capBrim: new THREE.BoxGeometry(0.58, 0.06, 0.28),
 } as const;
+
+const PLUME_SEGMENTS = [
+    { y: 0.08, scale: [0.85, 1.15, 0.68] },
+    { y: 0.24, scale: [1, 1.18, 0.7] },
+    { y: 0.41, scale: [0.78, 1.08, 0.62] },
+] as const;
 
 interface ArmPoseDefinition {
     leftShoulder: [number, number, number];
@@ -152,7 +157,6 @@ export default function ToonMarcherModel({
     gaitRef,
     instrumentPose,
 }: MarcherModelProps) {
-    const rootRef = useRef<THREE.Group>(null);
     const lowerBodyRef = useRef<THREE.Group>(null);
     const leftArmRef = useRef<THREE.Group>(null);
     const rightArmRef = useRef<THREE.Group>(null);
@@ -168,20 +172,12 @@ export default function ToonMarcherModel({
     const armPose = ARM_POSES[instrumentPose];
 
     useFrame((_, delta) => {
-        const root = rootRef.current;
         const lowerBody = lowerBodyRef.current;
         const leftArm = leftArmRef.current;
         const rightArm = rightArmRef.current;
         const leftLeg = leftLegRef.current;
         const rightLeg = rightLegRef.current;
-        if (
-            !root ||
-            !lowerBody ||
-            !leftArm ||
-            !rightArm ||
-            !leftLeg ||
-            !rightLeg
-        )
+        if (!lowerBody || !leftArm || !rightArm || !leftLeg || !rightLeg)
             return;
 
         const smoothing = 1 - Math.exp(-delta * 11);
@@ -214,20 +210,15 @@ export default function ToonMarcherModel({
             motionRef.legFacing,
             smoothing,
         );
-
-        const bob = Math.abs(Math.sin(phase)) * 0.045 * motionBlendRef.current;
-        const sway = Math.cos(phase) * 0.03 * motionBlendRef.current;
-        root.position.y = THREE.MathUtils.lerp(root.position.y, bob, smoothing);
-        root.rotation.z = THREE.MathUtils.lerp(
-            root.rotation.z,
-            sway,
-            smoothing,
-        );
     });
 
     return (
         <group dispose={null}>
-            <group ref={rootRef} scale={[1, variation.height, 1]}>
+            <group
+                position={[0, 0, 0]}
+                rotation={[0, 0, 0]}
+                scale={[1, variation.height, 1]}
+            >
                 <group ref={lowerBodyRef}>
                     <group
                         ref={leftLegRef}
@@ -419,17 +410,11 @@ export default function ToonMarcherModel({
                                     color={STORYBOOK_THEME.uniformDark}
                                 />
                             </mesh>
-                            <mesh
-                                geometry={MODEL_GEOMETRIES.shakoBadge}
-                                position={[0, 0.35, 0.3]}
-                            >
-                                <meshToonMaterial color={color} />
-                            </mesh>
                             <group
-                                position={[variation.plumeLean, 0.65, 0]}
-                                rotation={[0, 0, variation.plumeLean]}
+                                position={[0, 0.59, -0.005]}
+                                rotation={[0, 0, variation.plumeLean * 0.65]}
                             >
-                                {[-0.06, 0.12, 0.31].map((y, index) => (
+                                {PLUME_SEGMENTS.map(({ y, scale }, index) => (
                                     <mesh
                                         key={y}
                                         geometry={
@@ -437,12 +422,8 @@ export default function ToonMarcherModel({
                                                 ? MODEL_GEOMETRIES.plumeCenter
                                                 : MODEL_GEOMETRIES.plume
                                         }
-                                        position={[
-                                            index * variation.plumeLean * 0.7,
-                                            y,
-                                            0,
-                                        ]}
-                                        scale={[1, 1.3, 0.72]}
+                                        position={[0, y, 0]}
+                                        scale={scale}
                                     >
                                         <meshToonMaterial
                                             color={
