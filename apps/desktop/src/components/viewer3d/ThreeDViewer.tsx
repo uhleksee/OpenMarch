@@ -10,7 +10,12 @@ import {
     useState,
     type ElementRef,
 } from "react";
-import { Canvas as ThreeCanvas, useFrame, useThree } from "@react-three/fiber";
+import {
+    Canvas as ThreeCanvas,
+    useFrame,
+    useThree,
+    type ThreeEvent,
+} from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
     keepPreviousData,
@@ -83,6 +88,18 @@ import type Beat from "@/global/classes/Beat";
 import { createMarchBeatTimeline, getMarchStepAtTime } from "./marchBeatPhase";
 import IndoorArenaEnvironment from "./IndoorArenaEnvironment";
 import DirectorPanel from "./DirectorPanel";
+import PerformerFocusPanel, {
+    type MotionTrailMode,
+    type PerformerFocusMode,
+} from "./PerformerFocusPanel";
+import {
+    getPerformerFollowCameraState,
+    getPerformerPovCameraState,
+    resolvePerformerCameraFocus,
+    type PerformerCameraMode,
+    type PerformerWorldPose,
+} from "./performerCamera";
+import MotionTrails from "./MotionTrails";
 import {
     getDirectorCameraStateAtTimeFromSortedShots,
     interpolateCameraRollDegrees,
@@ -163,11 +180,16 @@ interface CameraRigProps {
     directorEnabled: boolean;
     directorShots: DirectorCameraShot[];
     pausedTimeSeconds: number;
+    focusMode: PerformerFocusMode;
+    focusSection: string | null;
+    focusedMarcherIds: readonly number[];
+    marcherRefs: Map<number, MarcherShadowGroupRef>;
 }
 
 export interface CameraRigHandle {
     capture: () => DirectorCameraState | null;
     flyTo: (state: DirectorCameraState, durationSeconds?: number) => void;
+    restoreFreeView: () => void;
     setRoll: (rollDegrees: number) => void;
 }
 
@@ -194,6 +216,44 @@ function applyCameraRoll(
     camera.rotateZ(THREE.MathUtils.degToRad(rollDegrees));
 }
 
+type MutablePerformerWorldPose = Omit<PerformerWorldPose, "position"> & {
+    position: [number, number, number];
+};
+
+function syncPerformerPoses(
+    poses: MutablePerformerWorldPose[],
+    marcherRefs: Map<number, MarcherShadowGroupRef>,
+    includeHidden: boolean,
+) {
+    for (const pose of poses) {
+        const group = marcherRefs.get(pose.id)?.current;
+        pose.visible = !!group && (includeHidden || group.visible);
+        if (!group) continue;
+        pose.position[0] = group.position.x;
+        pose.position[1] = group.position.y;
+        pose.position[2] = group.position.z;
+        pose.facingRadians = group.rotation.y;
+    }
+}
+
+function getVisiblePerformerTarget(
+    poses: readonly MutablePerformerWorldPose[],
+    target: THREE.Vector3,
+): boolean {
+    let count = 0;
+    target.set(0, 0, 0);
+    for (const pose of poses) {
+        if (pose.visible === false) continue;
+        target.x += pose.position[0];
+        target.y += pose.position[1] + 1.65;
+        target.z += pose.position[2];
+        count += 1;
+    }
+    if (count === 0) return false;
+    target.multiplyScalar(1 / count);
+    return true;
+}
+
 const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
     function CameraRig(
         {
@@ -204,14 +264,25 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
             directorEnabled,
             directorShots,
             pausedTimeSeconds,
+            focusMode,
+            focusSection,
+            focusedMarcherIds,
+            marcherRefs,
         },
         ref,
     ) {
-        const { camera } = useThree();
+        const { camera, size } = useThree();
         const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
         const transitionRef = useRef<CameraTransition | null>(null);
         const appliedRollDegreesRef = useRef(rollDegrees);
         const initializedRef = useRef(false);
+        const activeFocusKeyRef = useRef("");
+        const preFocusCameraStateRef = useRef<DirectorCameraState | null>(null);
+        const trackedFocusTargetRef = useRef(new THREE.Vector3());
+        const liveFocusTargetRef = useRef(new THREE.Vector3());
+        const focusDeltaRef = useRef(new THREE.Vector3());
+        const povPositionRef = useRef(new THREE.Vector3());
+        const povTargetRef = useRef(new THREE.Vector3());
         const isPlaying = useIsPlaying()?.isPlaying ?? false;
         const configuration = useMemo(
             () => getCameraPresetConfiguration(preset, fieldWidth, fieldDepth),
@@ -220,6 +291,32 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
         const sortedDirectorShots = useMemo(
             () => sortDirectorCameraShots(directorShots),
             [directorShots],
+        );
+        const focusCameraMode = useMemo<PerformerCameraMode>(() => {
+            const marcherId = focusedMarcherIds[0];
+            if (focusMode === "pov" && marcherId != null)
+                return { kind: "pov", marcherId };
+            if (focusMode === "followPerformer" && marcherId != null)
+                return { kind: "follow-performer", marcherId };
+            if (focusMode === "followSection" && focusSection != null)
+                return { kind: "follow-section", section: focusSection };
+            return { kind: "free" };
+        }, [focusMode, focusSection, focusedMarcherIds]);
+        const focusKey = useMemo(
+            () =>
+                `${focusMode}:${focusSection ?? ""}:${focusedMarcherIds.join(",")}`,
+            [focusMode, focusSection, focusedMarcherIds],
+        );
+        const focusPoses = useMemo<MutablePerformerWorldPose[]>(
+            () =>
+                focusedMarcherIds.map((marcherId) => ({
+                    id: marcherId,
+                    section: focusSection ?? "",
+                    position: [0, 0, 0],
+                    facingRadians: 0,
+                    visible: false,
+                })),
+            [focusSection, focusedMarcherIds],
         );
 
         const startTransition = useCallback(
@@ -262,6 +359,13 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
                     };
                 },
                 flyTo: startTransition,
+                restoreFreeView: () => {
+                    const savedState = preFocusCameraStateRef.current;
+                    if (!savedState) return;
+                    activeFocusKeyRef.current = "";
+                    preFocusCameraStateRef.current = null;
+                    startTransition(savedState, 0.7);
+                },
                 setRoll: (nextRollDegrees) => {
                     const controls = controlsRef.current;
                     if (
@@ -279,15 +383,19 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
         );
 
         useEffect(() => {
+            if (!(camera instanceof THREE.PerspectiveCamera)) return;
+            // POV needs a short near plane, while the tighter default range
+            // keeps layered field markings stable in distant views.
+            camera.near = focusMode === "pov" ? 0.08 : 0.5;
+            camera.far = Math.max(25, Math.max(fieldWidth, fieldDepth) * 12);
+            camera.updateProjectionMatrix();
+        }, [camera, fieldDepth, fieldWidth, focusMode]);
+
+        useEffect(() => {
             const controls = controlsRef.current;
             if (!controls || !(camera instanceof THREE.PerspectiveCamera))
                 return;
 
-            // A tighter depth range prevents the field layers from fighting
-            // when viewed from overhead or from far away.
-            camera.near = 0.5;
-            camera.far = Math.max(25, Math.max(fieldWidth, fieldDepth) * 12);
-            camera.updateProjectionMatrix();
             // Director mode owns the camera while it is active. Shot edits
             // must not pull a manually positioned camera back to its preset.
             if (directorEnabled) return;
@@ -352,6 +460,125 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
                 return;
             }
 
+            if (focusCameraMode.kind === "free") {
+                activeFocusKeyRef.current = "";
+            } else {
+                const isPov = focusCameraMode.kind === "pov";
+                syncPerformerPoses(focusPoses, marcherRefs, isPov);
+
+                if (isPov) {
+                    transitionRef.current = null;
+                    const povState = getPerformerPovCameraState(focusPoses[0], {
+                        rollDegrees,
+                    });
+                    if (povState) {
+                        if (activeFocusKeyRef.current === "") {
+                            preFocusCameraStateRef.current = {
+                                position: camera.position.toArray(),
+                                target: controls.target.toArray(),
+                                fov: camera.fov,
+                                rollDegrees: appliedRollDegreesRef.current,
+                            };
+                        }
+                        const smoothing = 1 - Math.exp(-delta * 9);
+                        povPositionRef.current.set(...povState.position);
+                        povTargetRef.current.set(...povState.target);
+                        camera.position.lerp(povPositionRef.current, smoothing);
+                        controls.target.lerp(povTargetRef.current, smoothing);
+                        const nextFov = THREE.MathUtils.lerp(
+                            camera.fov,
+                            povState.fov,
+                            smoothing,
+                        );
+                        if (Math.abs(camera.fov - nextFov) > 0.0001) {
+                            camera.fov = nextFov;
+                            camera.updateProjectionMatrix();
+                        }
+                        applyCameraRoll(camera, controls.target, rollDegrees);
+                        appliedRollDegreesRef.current = rollDegrees;
+                        activeFocusKeyRef.current = focusKey;
+                        initializedRef.current = true;
+                    }
+                    return;
+                }
+
+                const hasLiveTarget = getVisiblePerformerTarget(
+                    focusPoses,
+                    liveFocusTargetRef.current,
+                );
+                if (hasLiveTarget) {
+                    if (activeFocusKeyRef.current !== focusKey) {
+                        const focus = resolvePerformerCameraFocus(
+                            focusCameraMode,
+                            focusPoses,
+                        );
+                        const followState = getPerformerFollowCameraState(
+                            focus,
+                            {
+                                position: camera.position.toArray(),
+                                target: controls.target.toArray(),
+                                fov: camera.fov,
+                                rollDegrees: appliedRollDegreesRef.current,
+                            },
+                            {
+                                aspect:
+                                    size.height > 0
+                                        ? size.width / size.height
+                                        : 16 / 9,
+                                padding:
+                                    focusCameraMode.kind === "follow-section"
+                                        ? 1.3
+                                        : 1.15,
+                                minimumDistance:
+                                    focusCameraMode.kind === "follow-section"
+                                        ? 8
+                                        : 6,
+                                maximumDistance:
+                                    Math.max(fieldWidth, fieldDepth) * 3,
+                            },
+                        );
+                        if (followState && focus) {
+                            if (activeFocusKeyRef.current === "") {
+                                preFocusCameraStateRef.current = {
+                                    position: camera.position.toArray(),
+                                    target: controls.target.toArray(),
+                                    fov: camera.fov,
+                                    rollDegrees: appliedRollDegreesRef.current,
+                                };
+                            }
+                            startTransition(followState, 0.7);
+                            trackedFocusTargetRef.current.set(...focus.target);
+                            activeFocusKeyRef.current = focusKey;
+                        }
+                    } else {
+                        focusDeltaRef.current
+                            .copy(liveFocusTargetRef.current)
+                            .sub(trackedFocusTargetRef.current);
+                        const focusTransition = transitionRef.current;
+                        if (focusTransition) {
+                            focusTransition.toPosition.add(
+                                focusDeltaRef.current,
+                            );
+                            focusTransition.toTarget.add(focusDeltaRef.current);
+                        } else {
+                            camera.position.add(focusDeltaRef.current);
+                            controls.target.copy(liveFocusTargetRef.current);
+                            controls.update();
+                            applyCameraRoll(
+                                camera,
+                                controls.target,
+                                rollDegrees,
+                            );
+                            appliedRollDegreesRef.current = rollDegrees;
+                        }
+                        trackedFocusTargetRef.current.copy(
+                            liveFocusTargetRef.current,
+                        );
+                        if (!focusTransition) return;
+                    }
+                }
+            }
+
             const transition = transitionRef.current;
             if (!transition) {
                 applyCameraRoll(camera, controls.target, rollDegrees);
@@ -397,8 +624,8 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
             <OrbitControls
                 ref={controlsRef}
                 makeDefault
-                enabled={!directorEnabled}
-                enablePan
+                enabled={!directorEnabled && focusMode !== "pov"}
+                enablePan={focusMode === "free"}
                 enableRotate
                 enableZoom
                 enableDamping
@@ -496,7 +723,45 @@ interface MarcherFormationProps {
     fieldWidth: number;
     fieldDepth: number;
     venue: ResolvedVenue;
+    marcherRefs: Map<number, MarcherShadowGroupRef>;
+    selectedMarcherId: number | null;
+    povMarcherId: number | null;
+    onSelectMarcher: (marcherId: number) => void;
 }
+
+const SELECTED_MARCHER_RING_GEOMETRY = new THREE.RingGeometry(0.52, 0.7, 32);
+SELECTED_MARCHER_RING_GEOMETRY.rotateX(-Math.PI / 2);
+const MARCHER_SELECTION_TARGET_GEOMETRY = new THREE.BoxGeometry(1.2, 3.7, 1.2);
+const MARCHER_SELECTION_TARGET_MATERIAL = new THREE.MeshBasicMaterial();
+MARCHER_SELECTION_TARGET_MATERIAL.visible = false;
+
+interface MarcherSelectionTargetProps {
+    marcherId: number;
+    onSelectMarcher: (marcherId: number) => void;
+}
+
+const MarcherSelectionTarget = memo(function MarcherSelectionTarget({
+    marcherId,
+    onSelectMarcher,
+}: MarcherSelectionTargetProps) {
+    const handleClick = useCallback(
+        (event: ThreeEvent<MouseEvent>) => {
+            event.stopPropagation();
+            onSelectMarcher(marcherId);
+        },
+        [marcherId, onSelectMarcher],
+    );
+
+    return (
+        <mesh
+            geometry={MARCHER_SELECTION_TARGET_GEOMETRY}
+            material={MARCHER_SELECTION_TARGET_MATERIAL}
+            position={[0, 1.75, 0]}
+            dispose={null}
+            onClick={handleClick}
+        />
+    );
+});
 
 function MarcherFormation({
     marchers,
@@ -513,8 +778,11 @@ function MarcherFormation({
     fieldWidth,
     fieldDepth,
     venue,
+    marcherRefs,
+    selectedMarcherId,
+    povMarcherId,
+    onSelectMarcher,
 }: MarcherFormationProps) {
-    const marcherRefs = useRef(new Map<number, MarcherShadowGroupRef>());
     const marcherMotionRefs = useRef(new Map<number, MarcherMotionRef>());
     const gaitRef = useRef<MarcherGaitRef>({ phase: 0 });
     const { isPlaying } = useIsPlaying()!;
@@ -531,7 +799,7 @@ function MarcherFormation({
     const setPausedPositions = useCallback(() => {
         for (const marcher of marchers) {
             const marcherPage = marcherPages[marcher.id];
-            const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
+            const marcherGroup = marcherRefs.get(marcher.id)?.current;
             if (!marcherPage || !marcherGroup) continue;
             const motionRef = marcherMotionRefs.current.get(marcher.id);
             if (motionRef) {
@@ -542,7 +810,7 @@ function MarcherFormation({
                 ...canvasCoordinatesToWorld(marcherPage, fieldProperties),
             );
         }
-    }, [fieldProperties, marcherPages, marchers]);
+    }, [fieldProperties, marcherPages, marcherRefs, marchers]);
 
     useLayoutEffect(() => {
         if (!isPlaying) setPausedPositions();
@@ -551,13 +819,13 @@ function MarcherFormation({
     useLayoutEffect(() => {
         for (const marcher of marchers) {
             const marcherPage = marcherPages[marcher.id];
-            const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
+            const marcherGroup = marcherRefs.get(marcher.id)?.current;
             if (!marcherPage || !marcherGroup) continue;
             marcherGroup.rotation.y = THREE.MathUtils.degToRad(
                 -marcherPage.rotation_degrees,
             );
         }
-    }, [marcherPages, marchers]);
+    }, [marcherPages, marcherRefs, marchers]);
 
     useEffect(
         () =>
@@ -575,16 +843,14 @@ function MarcherFormation({
 
                 for (const marcher of marchers) {
                     const marcherPage = playbackMarcherPages[marcher.id];
-                    const marcherGroup = marcherRefs.current.get(
-                        marcher.id,
-                    )?.current;
+                    const marcherGroup = marcherRefs.get(marcher.id)?.current;
                     if (!marcherPage || !marcherGroup) continue;
                     marcherGroup.rotation.y = THREE.MathUtils.degToRad(
                         -marcherPage.rotation_degrees,
                     );
                 }
             }),
-        [marchers, queryClient],
+        [marcherRefs, marchers, queryClient],
     );
 
     useFrame(() => {
@@ -600,7 +866,7 @@ function MarcherFormation({
         const currentTime = playbackSeconds * 1000;
 
         for (const marcher of marchers) {
-            const marcherGroup = marcherRefs.current.get(marcher.id)?.current;
+            const marcherGroup = marcherRefs.get(marcher.id)?.current;
             const timeline = marcherTimelines.get(marcher.id);
             const motionRef = marcherMotionRefs.current.get(marcher.id);
             if (!marcherGroup || !timeline || !motionRef) continue;
@@ -641,7 +907,7 @@ function MarcherFormation({
         <group>
             <MarcherShadows
                 marcherIds={marcherIds}
-                marcherRefs={marcherRefs.current}
+                marcherRefs={marcherRefs}
                 mode={lightingMode}
                 fieldWidth={fieldWidth}
                 fieldDepth={fieldDepth}
@@ -659,18 +925,45 @@ function MarcherFormation({
                     motionRef = { current: false, legFacing: 0 };
                     marcherMotionRefs.current.set(marcher.id, motionRef);
                 }
-                let marcherGroupRef = marcherRefs.current.get(marcher.id);
+                let marcherGroupRef = marcherRefs.get(marcher.id);
                 if (!marcherGroupRef) {
                     marcherGroupRef = { current: null };
-                    marcherRefs.current.set(marcher.id, marcherGroupRef);
+                    marcherRefs.set(marcher.id, marcherGroupRef);
                 }
 
                 return (
                     <group
                         key={marcher.id}
                         ref={marcherGroupRef}
-                        visible={appearance.visible}
+                        visible={
+                            appearance.visible && marcher.id !== povMarcherId
+                        }
                     >
+                        {appearance.visible && marcher.id !== povMarcherId && (
+                            <MarcherSelectionTarget
+                                marcherId={marcher.id}
+                                onSelectMarcher={onSelectMarcher}
+                            />
+                        )}
+                        {marcher.id === selectedMarcherId && (
+                            <mesh
+                                geometry={SELECTED_MARCHER_RING_GEOMETRY}
+                                position={[0, 0.085, 0]}
+                                renderOrder={8}
+                                dispose={null}
+                            >
+                                <meshBasicMaterial
+                                    color="#a78bfa"
+                                    transparent
+                                    opacity={0.94}
+                                    depthWrite={false}
+                                    toneMapped={false}
+                                    polygonOffset
+                                    polygonOffsetFactor={-2}
+                                    polygonOffsetUnits={-2}
+                                />
+                            </mesh>
+                        )}
                         <Marcher3D
                             marcherId={marcher.id}
                             drillNumber={marcher.drill_number}
@@ -699,7 +992,13 @@ export default function ThreeDViewer() {
     const [cameraRollDegrees, setCameraRollDegrees] = useState(0);
     const [preferences, setPreferences] = useState(loadViewerPreferences);
     const [directorEnabled, setDirectorEnabled] = useState(false);
+    const [selectedMarcherId, setSelectedMarcherId] = useState<number | null>(
+        null,
+    );
+    const [focusMode, setFocusMode] = useState<PerformerFocusMode>("free");
+    const [trailMode, setTrailMode] = useState<MotionTrailMode>("off");
     const cameraRigRef = useRef<CameraRigHandle>(null);
+    const marcherRefs = useRef(new Map<number, MarcherShadowGroupRef>());
     const databaseReady = useDatabaseReady();
     const queryClient = useQueryClient();
     const { selectedPage } = useSelectedPage()!;
@@ -743,6 +1042,36 @@ export default function ThreeDViewer() {
             ),
         [workspaceSettings?.directorCameraShots],
     );
+    const selectedMarcher = useMemo(
+        () =>
+            marchers.find((marcher) => marcher.id === selectedMarcherId) ??
+            null,
+        [marchers, selectedMarcherId],
+    );
+    const selectedSectionMarcherIds = useMemo(
+        () =>
+            selectedMarcher
+                ? marchers
+                      .filter(
+                          (marcher) =>
+                              marcher.section === selectedMarcher.section,
+                      )
+                      .map((marcher) => marcher.id)
+                : [],
+        [marchers, selectedMarcher],
+    );
+    const focusedMarcherIds = useMemo(() => {
+        if (!selectedMarcher || focusMode === "free") return [];
+        return focusMode === "followSection"
+            ? selectedSectionMarcherIds
+            : [selectedMarcher.id];
+    }, [focusMode, selectedMarcher, selectedSectionMarcherIds]);
+    const trailMarcherIds = useMemo(() => {
+        if (!selectedMarcher || trailMode === "off") return [];
+        return trailMode === "section"
+            ? selectedSectionMarcherIds
+            : [selectedMarcher.id];
+    }, [selectedMarcher, selectedSectionMarcherIds, trailMode]);
 
     useEffect(() => {
         saveViewerPreferences(preferences);
@@ -751,6 +1080,14 @@ export default function ThreeDViewer() {
     useEffect(() => {
         if (directorShots.length === 0) setDirectorEnabled(false);
     }, [directorShots.length]);
+
+    useEffect(() => {
+        if (selectedMarcherId == null || selectedMarcher) return;
+        cameraRigRef.current?.restoreFreeView();
+        setSelectedMarcherId(null);
+        setFocusMode("free");
+        setTrailMode("off");
+    }, [selectedMarcher, selectedMarcherId]);
 
     const saveDirectorShots = useCallback(
         (shots: DirectorCameraShot[]) => {
@@ -816,6 +1153,7 @@ export default function ThreeDViewer() {
     }, [directorShots, isPlaying, saveDirectorShots, selectedPage]);
 
     const previewDirectorShot = useCallback((shot: DirectorCameraShot) => {
+        setFocusMode("free");
         setDirectorEnabled(false);
         requestAnimationFrame(() => {
             cameraRigRef.current?.flyTo(shot, 0.9);
@@ -826,6 +1164,21 @@ export default function ThreeDViewer() {
     const changeCameraRoll = useCallback((rollDegrees: number) => {
         cameraRigRef.current?.setRoll(rollDegrees);
         setCameraRollDegrees(rollDegrees);
+    }, []);
+
+    const selectMarcher = useCallback((marcherId: number | null) => {
+        setSelectedMarcherId(marcherId);
+        if (marcherId == null) {
+            cameraRigRef.current?.restoreFreeView();
+            setFocusMode("free");
+            setTrailMode("off");
+        }
+    }, []);
+
+    const changeFocusMode = useCallback((mode: PerformerFocusMode) => {
+        if (mode === "free") cameraRigRef.current?.restoreFreeView();
+        setDirectorEnabled(false);
+        setFocusMode(mode);
     }, []);
 
     if (!fieldProperties || !selectedPage) {
@@ -868,6 +1221,7 @@ export default function ThreeDViewer() {
                 shadows="percentage"
                 dpr={1}
                 performance={{ min: 0.6 }}
+                onPointerMissed={() => selectMarcher(null)}
                 gl={{
                     antialias: false,
                     alpha: false,
@@ -886,6 +1240,17 @@ export default function ThreeDViewer() {
                     fieldImage={fieldImage}
                     venue={venue}
                 />
+                {showPerformers && trailMarcherIds.length > 0 && (
+                    <MotionTrails
+                        marcherTimelines={marcherTimelines}
+                        fieldProperties={fieldProperties}
+                        activeMarcherIds={trailMarcherIds}
+                        isPlaying={isPlaying}
+                        pausedTimeSeconds={
+                            selectedPage.timestamp + selectedPage.duration
+                        }
+                    />
+                )}
                 {showPerformers && (
                     <MarcherFormation
                         marchers={marchers}
@@ -902,6 +1267,12 @@ export default function ThreeDViewer() {
                         fieldWidth={width}
                         fieldDepth={depth}
                         venue={venue}
+                        marcherRefs={marcherRefs.current}
+                        selectedMarcherId={selectedMarcherId}
+                        povMarcherId={
+                            focusMode === "pov" ? selectedMarcherId : null
+                        }
+                        onSelectMarcher={selectMarcher}
                     />
                 )}
                 <MemoizedCameraRig
@@ -913,6 +1284,10 @@ export default function ThreeDViewer() {
                     directorEnabled={directorEnabled}
                     directorShots={directorShots}
                     pausedTimeSeconds={selectedPage.timestamp}
+                    focusMode={focusMode}
+                    focusSection={selectedMarcher?.section ?? null}
+                    focusedMarcherIds={focusedMarcherIds}
+                    marcherRefs={marcherRefs.current}
                 />
                 {diagnosticsEnabled && <PerformanceSampler />}
             </ThreeCanvas>
@@ -935,8 +1310,24 @@ export default function ThreeDViewer() {
                                 type="button"
                                 aria-pressed={cameraPreset === preset}
                                 onClick={() => {
+                                    setFocusMode("free");
                                     setDirectorEnabled(false);
                                     setCameraRollDegrees(0);
+                                    if (cameraPreset === preset) {
+                                        const presetConfiguration =
+                                            getCameraPresetConfiguration(
+                                                preset,
+                                                width,
+                                                depth,
+                                            );
+                                        cameraRigRef.current?.flyTo({
+                                            position:
+                                                presetConfiguration.position,
+                                            target: presetConfiguration.target,
+                                            fov: presetConfiguration.fov,
+                                            rollDegrees: 0,
+                                        });
+                                    }
                                     setCameraPreset(preset);
                                 }}
                                 className={clsx(
@@ -1083,7 +1474,11 @@ export default function ThreeDViewer() {
                     rollDegrees={cameraRollDegrees}
                     selectedPageName={selectedPage.name}
                     onToggle={() => {
-                        if (directorEnabled) setCameraRollDegrees(0);
+                        if (directorEnabled) {
+                            setCameraRollDegrees(0);
+                        } else {
+                            setFocusMode("free");
+                        }
                         setDirectorEnabled((current) => !current);
                     }}
                     onCapture={captureDirectorShot}
@@ -1103,6 +1498,24 @@ export default function ThreeDViewer() {
                             ),
                         )
                     }
+                />
+            </div>
+
+            <div className="absolute right-6 bottom-6 z-10 max-h-[calc(100%_-_3rem)] max-w-[calc(100%_-_3rem)] overflow-y-auto">
+                <PerformerFocusPanel
+                    marchers={marchers}
+                    selectedMarcher={selectedMarcher}
+                    selectedMarcherPage={
+                        selectedMarcher
+                            ? marcherPages[selectedMarcher.id]
+                            : undefined
+                    }
+                    selectedPageName={selectedPage.name}
+                    focusMode={focusMode}
+                    trailMode={trailMode}
+                    onSelectMarcher={selectMarcher}
+                    onFocusModeChange={changeFocusMode}
+                    onTrailModeChange={setTrailMode}
                 />
             </div>
 
