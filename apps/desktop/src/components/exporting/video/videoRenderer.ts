@@ -20,6 +20,8 @@ import { type MarcherTimeline } from "@/utilities/Keyframes";
 import { prepareAudioChannels, sliceAudioChannels } from "./videoExportAudio";
 import Measure from "@/global/classes/Measure";
 import {
+    drawBranding,
+    drawOverlay,
     loadBrandingLogo,
     OverlayOptions,
     OverlayPlacement,
@@ -33,6 +35,10 @@ import {
     renderVideoFrame,
 } from "./videoFrameRenderer";
 import type { MarcherAppearancesByPageId } from "../utils/exportAppearances";
+import type MarcherPageMap from "@/global/classes/MarcherPageIndex";
+import type { DirectorCameraShot } from "@/utilities/directorCamera";
+import type { Viewer3DPreferences } from "@/components/viewer3d/viewer3d.types";
+import type { ThreeDVideoRenderContext } from "./threeDVideoRenderer";
 
 const KEYFRAME_INTERVAL_SECONDS = 2;
 const AUDIO_SLICE_SECONDS = 1;
@@ -60,6 +66,15 @@ export interface VideoExportArgs {
     videoTheme: VideoTheme;
     /** Pan/zoom for the field within the frame */
     fieldFraming?: FieldFraming;
+    /** Keep 2D as the default so existing exports retain their exact behavior. */
+    renderMode?: "2d" | "3d";
+    /** Scene data used only by deterministic offscreen 3D exports. */
+    threeD?: {
+        directorCameraShots: DirectorCameraShot[];
+        viewerPreferences: Viewer3DPreferences;
+        fieldImage: Uint8Array | null;
+        marcherPages: MarcherPageMap;
+    };
     /** When set, an info HUD (set, counts, measure, etc.) is drawn on each frame */
     overlay?: {
         options: OverlayOptions;
@@ -167,11 +182,11 @@ function channelsToAudioBuffer(
 /**
  * Render the show to a video file (animation + synced audio).
  *
- * Frames are rendered off-screen on an OpenMarchCanvas driven by the same
- * keyframe interpolation as live playback, captured with MediaBunny's
- * CanvasSource, and streamed to disk through the main process. Audio is
- * appended in one-second slices interleaved with the video frames so both
- * tracks start at timestamp 0 and stay memory-bounded.
+ * Frames are rendered off-screen from either the existing 2D canvas or a
+ * manually advanced 3D scene. Both use the same keyframe timestamps and the
+ * same MediaBunny audio/encoding pipeline, so exports never depend on display
+ * refresh rate or screen capture permissions. Audio is appended in one-second
+ * slices to keep both tracks synchronized and memory-bounded.
  */
 // eslint-disable-next-line max-lines-per-function
 export async function exportVideo(
@@ -188,9 +203,12 @@ export async function exportVideo(
         onProgress,
         isCancelled = () => false,
     } = args;
+    const renderMode = args.renderMode ?? "2d";
 
     if (sortedPages.length === 0)
         throw new Error("The show has no pages to export");
+    if (renderMode === "3d" && !args.threeD)
+        throw new Error("The 3D scene data is not available for export");
 
     const lastPage = sortedPages[sortedPages.length - 1];
     const durationSeconds = lastPage.timestamp + lastPage.duration;
@@ -210,6 +228,7 @@ export async function exportVideo(
     let renderContext: Awaited<
         ReturnType<typeof createVideoRenderContext>
     > | null = null;
+    let threeDRenderContext: ThreeDVideoRenderContext | null = null;
 
     try {
         const { channels: audioSlices, sampleRate } = await prepareAudio(
@@ -218,17 +237,37 @@ export async function exportVideo(
             durationSeconds,
         );
 
-        renderContext = await createVideoRenderContext({
-            fieldProperties,
-            sortedPages,
-            marchers: args.marchers,
-            marcherTimelines,
-            sectionAppearances: args.sectionAppearances,
-            marcherAppearancesByPageId: args.marcherAppearancesByPageId,
-            backgroundImage: args.backgroundImage,
-            gridLines: args.gridLines,
-            halfLines: args.halfLines,
-        });
+        if (renderMode === "3d") {
+            const { createThreeDVideoRenderContext } =
+                await import("./threeDVideoRenderer");
+            threeDRenderContext = await createThreeDVideoRenderContext({
+                fieldProperties,
+                sortedPages,
+                marchers: args.marchers,
+                marcherTimelines,
+                marcherAppearancesByPageId: args.marcherAppearancesByPageId,
+                fieldImage: args.threeD!.fieldImage,
+                marcherPages: args.threeD!.marcherPages,
+                gridLines: args.gridLines,
+                halfLines: args.halfLines,
+                width,
+                height,
+                directorCameraShots: args.threeD!.directorCameraShots,
+                viewerPreferences: args.threeD!.viewerPreferences,
+            });
+        } else {
+            renderContext = await createVideoRenderContext({
+                fieldProperties,
+                sortedPages,
+                marchers: args.marchers,
+                marcherTimelines,
+                sectionAppearances: args.sectionAppearances,
+                marcherAppearancesByPageId: args.marcherAppearancesByPageId,
+                backgroundImage: args.backgroundImage,
+                gridLines: args.gridLines,
+                halfLines: args.halfLines,
+            });
+        }
 
         const frameCanvas = document.createElement("canvas");
         frameCanvas.width = width;
@@ -304,23 +343,58 @@ export async function exportVideo(
             const timestampSeconds = frame / fps;
             await flushAudioUntil(timestampSeconds);
 
-            renderVideoFrame({
-                ctx: frameContext,
-                context: renderContext,
-                timeSeconds: timestampSeconds,
-                durationSeconds,
-                width,
-                height,
-                videoTheme: args.videoTheme,
-                fieldFraming,
-                overlayState:
-                    overlayTimeline && args.overlay
-                        ? overlayTimeline.getState(timestampSeconds)
-                        : undefined,
-                overlayOptions: args.overlay?.options,
-                overlayPlacement: args.overlay?.placement,
-                brandingLogo,
-            });
+            const overlayState =
+                overlayTimeline && args.overlay
+                    ? overlayTimeline.getState(timestampSeconds)
+                    : undefined;
+            if (threeDRenderContext) {
+                threeDRenderContext.renderFrame(timestampSeconds);
+                frameContext.clearRect(0, 0, width, height);
+                frameContext.drawImage(
+                    threeDRenderContext.canvas,
+                    0,
+                    0,
+                    width,
+                    height,
+                );
+                if (
+                    overlayState &&
+                    args.overlay?.options &&
+                    args.overlay.placement
+                ) {
+                    drawOverlay(
+                        frameContext,
+                        overlayState,
+                        args.overlay.options,
+                        args.overlay.placement,
+                        width,
+                        height,
+                        args.videoTheme,
+                    );
+                }
+                drawBranding(
+                    frameContext,
+                    brandingLogo,
+                    width,
+                    height,
+                    args.videoTheme,
+                );
+            } else if (renderContext) {
+                renderVideoFrame({
+                    ctx: frameContext,
+                    context: renderContext,
+                    timeSeconds: timestampSeconds,
+                    durationSeconds,
+                    width,
+                    height,
+                    videoTheme: args.videoTheme,
+                    fieldFraming,
+                    overlayState,
+                    overlayOptions: args.overlay?.options,
+                    overlayPlacement: args.overlay?.placement,
+                    brandingLogo,
+                });
+            }
 
             await videoSource.add(timestampSeconds, 1 / fps, {
                 keyFrame: frame % (fps * KEYFRAME_INTERVAL_SECONDS) === 0,
@@ -343,5 +417,6 @@ export async function exportVideo(
         throw error;
     } finally {
         renderContext?.dispose();
+        threeDRenderContext?.dispose();
     }
 }

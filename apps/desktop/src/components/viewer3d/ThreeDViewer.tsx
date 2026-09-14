@@ -1,6 +1,8 @@
 import {
+    forwardRef,
     useCallback,
     useEffect,
+    useImperativeHandle,
     useLayoutEffect,
     memo,
     useMemo,
@@ -12,6 +14,7 @@ import { Canvas as ThreeCanvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
     keepPreviousData,
+    useMutation,
     useQuery,
     useQueryClient,
 } from "@tanstack/react-query";
@@ -61,13 +64,16 @@ import StadiumEnvironment from "./StadiumEnvironment";
 import MarcherShadows, { type MarcherShadowGroupRef } from "./MarcherShadows";
 import { CINEMATIC_OVERLAYS, LIGHTING_THEMES } from "./sceneTheme";
 import {
-    DEFAULT_VIEWER_3D_PREFERENCES,
     type LightingMode,
     type ResolvedVenue,
     type UniformColorMode,
     type UniformStyle,
     type VenuePreference,
 } from "./viewer3d.types";
+import {
+    loadViewerPreferences,
+    saveViewerPreferences,
+} from "./viewer3d.preferences";
 import {
     threeDiagnosticSnapshot,
     usePerformanceDiagnosticsStore,
@@ -76,14 +82,26 @@ import { usePlaybackPageStore } from "@/stores/PlaybackPageStore";
 import type Beat from "@/global/classes/Beat";
 import { createMarchBeatTimeline, getMarchStepAtTime } from "./marchBeatPhase";
 import IndoorArenaEnvironment from "./IndoorArenaEnvironment";
+import DirectorPanel from "./DirectorPanel";
+import {
+    getDirectorCameraStateAtTimeFromSortedShots,
+    MAX_DIRECTOR_CAMERA_SHOTS,
+    sortDirectorCameraShots,
+    type DirectorCameraShot,
+    type DirectorCameraState,
+} from "@/utilities/directorCamera";
+import {
+    updateWorkspaceSettingsMutationOptions,
+    workspaceSettingsKeys,
+    workspaceSettingsQueryOptions,
+} from "@/hooks/queries/useWorkspaceSettings";
+import type { WorkspaceSettings } from "@/settings/workspaceSettings";
 
 const CAMERA_LABELS: Record<CameraPreset, string> = {
     overhead: "Overhead",
     pressBox: "Press box",
     fieldLevel: "Field level",
 };
-
-const VIEWER_PREFERENCES_KEY = "openmarch-3d-viewer-preferences";
 
 function PerformanceSampler() {
     const { gl } = useThree();
@@ -136,50 +154,18 @@ function PerformanceSampler() {
     return null;
 }
 
-const loadViewerPreferences = () => {
-    try {
-        const saved = window.localStorage.getItem(VIEWER_PREFERENCES_KEY);
-        if (!saved) return DEFAULT_VIEWER_3D_PREFERENCES;
-        const parsed = JSON.parse(saved) as Partial<
-            typeof DEFAULT_VIEWER_3D_PREFERENCES
-        >;
-        return {
-            uniformStyle: ["classic", "modern", "summer"].includes(
-                parsed.uniformStyle ?? "",
-            )
-                ? (parsed.uniformStyle as UniformStyle)
-                : DEFAULT_VIEWER_3D_PREFERENCES.uniformStyle,
-            uniformColorMode: ["editor", "override"].includes(
-                parsed.uniformColorMode ?? "",
-            )
-                ? (parsed.uniformColorMode as UniformColorMode)
-                : DEFAULT_VIEWER_3D_PREFERENCES.uniformColorMode,
-            uniformColor:
-                typeof parsed.uniformColor === "string"
-                    ? parsed.uniformColor
-                    : DEFAULT_VIEWER_3D_PREFERENCES.uniformColor,
-            showLabels:
-                typeof parsed.showLabels === "boolean"
-                    ? parsed.showLabels
-                    : DEFAULT_VIEWER_3D_PREFERENCES.showLabels,
-            lightingMode: ["day", "sunset", "night"].includes(
-                parsed.lightingMode ?? "",
-            )
-                ? (parsed.lightingMode as LightingMode)
-                : DEFAULT_VIEWER_3D_PREFERENCES.lightingMode,
-            venue: ["auto", "outdoor", "indoor"].includes(parsed.venue ?? "")
-                ? (parsed.venue as VenuePreference)
-                : DEFAULT_VIEWER_3D_PREFERENCES.venue,
-        };
-    } catch {
-        return DEFAULT_VIEWER_3D_PREFERENCES;
-    }
-};
-
 interface CameraRigProps {
     preset: CameraPreset;
     fieldWidth: number;
     fieldDepth: number;
+    directorEnabled: boolean;
+    directorShots: DirectorCameraShot[];
+    pausedTimeSeconds: number;
+}
+
+export interface CameraRigHandle {
+    capture: () => DirectorCameraState | null;
+    flyTo: (state: DirectorCameraState, durationSeconds?: number) => void;
 }
 
 interface CameraTransition {
@@ -193,104 +179,186 @@ interface CameraTransition {
     toFov: number;
 }
 
-function CameraRig({ preset, fieldWidth, fieldDepth }: CameraRigProps) {
-    const { camera } = useThree();
-    const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
-    const transitionRef = useRef<CameraTransition | null>(null);
-    const initializedRef = useRef(false);
-    const configuration = useMemo(
-        () => getCameraPresetConfiguration(preset, fieldWidth, fieldDepth),
-        [fieldDepth, fieldWidth, preset],
-    );
+const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
+    function CameraRig(
+        {
+            preset,
+            fieldWidth,
+            fieldDepth,
+            directorEnabled,
+            directorShots,
+            pausedTimeSeconds,
+        },
+        ref,
+    ) {
+        const { camera } = useThree();
+        const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
+        const transitionRef = useRef<CameraTransition | null>(null);
+        const initializedRef = useRef(false);
+        const isPlaying = useIsPlaying()?.isPlaying ?? false;
+        const configuration = useMemo(
+            () => getCameraPresetConfiguration(preset, fieldWidth, fieldDepth),
+            [fieldDepth, fieldWidth, preset],
+        );
+        const sortedDirectorShots = useMemo(
+            () => sortDirectorCameraShots(directorShots),
+            [directorShots],
+        );
 
-    useEffect(() => {
-        const controls = controlsRef.current;
-        if (!controls || !(camera instanceof THREE.PerspectiveCamera)) return;
+        const startTransition = useCallback(
+            (state: DirectorCameraState, durationSeconds = 0.85) => {
+                const controls = controlsRef.current;
+                if (!controls || !(camera instanceof THREE.PerspectiveCamera))
+                    return;
+                transitionRef.current = {
+                    elapsed: 0,
+                    duration: Math.max(0.05, durationSeconds),
+                    fromPosition: camera.position.clone(),
+                    toPosition: new THREE.Vector3(...state.position),
+                    fromTarget: controls.target.clone(),
+                    toTarget: new THREE.Vector3(...state.target),
+                    fromFov: camera.fov,
+                    toFov: state.fov,
+                };
+                initializedRef.current = true;
+            },
+            [camera],
+        );
 
-        // A tighter depth range prevents the field layers from fighting when
-        // viewed from the overhead camera or from far away.
-        camera.near = 0.5;
-        camera.far = Math.max(25, Math.max(fieldWidth, fieldDepth) * 12);
+        useImperativeHandle(
+            ref,
+            () => ({
+                capture: () => {
+                    const controls = controlsRef.current;
+                    if (
+                        !controls ||
+                        !(camera instanceof THREE.PerspectiveCamera)
+                    )
+                        return null;
+                    return {
+                        position: camera.position.toArray(),
+                        target: controls.target.toArray(),
+                        fov: camera.fov,
+                    };
+                },
+                flyTo: startTransition,
+            }),
+            [camera, startTransition],
+        );
 
-        if (!initializedRef.current) {
-            camera.position.set(...configuration.position);
-            camera.fov = configuration.fov;
-            controls.target.set(...configuration.target);
+        useEffect(() => {
+            const controls = controlsRef.current;
+            if (!controls || !(camera instanceof THREE.PerspectiveCamera))
+                return;
+
+            // A tighter depth range prevents the field layers from fighting
+            // when viewed from overhead or from far away.
+            camera.near = 0.5;
+            camera.far = Math.max(25, Math.max(fieldWidth, fieldDepth) * 12);
+            camera.updateProjectionMatrix();
+            // Director mode owns the camera while it is active. Shot edits
+            // must not pull a manually positioned camera back to its preset.
+            if (directorEnabled) return;
+
+            const presetState: DirectorCameraState = {
+                position: configuration.position,
+                target: configuration.target,
+                fov: configuration.fov,
+            };
+            if (!initializedRef.current) {
+                camera.position.set(...presetState.position);
+                camera.fov = presetState.fov;
+                controls.target.set(...presetState.target);
+                camera.updateProjectionMatrix();
+                controls.update();
+                initializedRef.current = true;
+                return;
+            }
+            startTransition(presetState);
+        }, [
+            camera,
+            configuration,
+            directorEnabled,
+            fieldDepth,
+            fieldWidth,
+            startTransition,
+        ]);
+
+        useFrame((_, delta) => {
+            const controls = controlsRef.current;
+            if (!controls || !(camera instanceof THREE.PerspectiveCamera))
+                return;
+
+            if (directorEnabled && sortedDirectorShots.length > 0) {
+                transitionRef.current = null;
+                const directorState =
+                    getDirectorCameraStateAtTimeFromSortedShots(
+                        sortedDirectorShots,
+                        isPlaying
+                            ? getLivePlaybackPosition()
+                            : pausedTimeSeconds,
+                    );
+                if (!directorState) return;
+                camera.position.set(...directorState.position);
+                controls.target.set(...directorState.target);
+                camera.lookAt(...directorState.target);
+                camera.fov = directorState.fov;
+                camera.updateProjectionMatrix();
+                initializedRef.current = true;
+                return;
+            }
+
+            const transition = transitionRef.current;
+            if (!transition) return;
+            transition.elapsed = Math.min(
+                transition.duration,
+                transition.elapsed + delta,
+            );
+            const progress = transition.elapsed / transition.duration;
+            const eased = progress * progress * (3 - 2 * progress);
+
+            camera.position.lerpVectors(
+                transition.fromPosition,
+                transition.toPosition,
+                eased,
+            );
+            controls.target.lerpVectors(
+                transition.fromTarget,
+                transition.toTarget,
+                eased,
+            );
+            camera.fov = THREE.MathUtils.lerp(
+                transition.fromFov,
+                transition.toFov,
+                eased,
+            );
             camera.updateProjectionMatrix();
             controls.update();
-            initializedRef.current = true;
-            return;
-        }
 
-        transitionRef.current = {
-            elapsed: 0,
-            duration: 0.38,
-            fromPosition: camera.position.clone(),
-            toPosition: new THREE.Vector3(...configuration.position),
-            fromTarget: controls.target.clone(),
-            toTarget: new THREE.Vector3(...configuration.target),
-            fromFov: camera.fov,
-            toFov: configuration.fov,
-        };
-    }, [camera, configuration, fieldDepth, fieldWidth]);
+            if (progress >= 1) transitionRef.current = null;
+        });
 
-    useFrame((_, delta) => {
-        const transition = transitionRef.current;
-        const controls = controlsRef.current;
-        if (
-            !transition ||
-            !controls ||
-            !(camera instanceof THREE.PerspectiveCamera)
-        )
-            return;
-
-        transition.elapsed = Math.min(
-            transition.duration,
-            transition.elapsed + delta,
+        return (
+            <OrbitControls
+                ref={controlsRef}
+                makeDefault
+                enabled={!directorEnabled}
+                enablePan
+                enableRotate
+                enableZoom
+                enableDamping
+                dampingFactor={0.12}
+                onStart={() => {
+                    transitionRef.current = null;
+                }}
+                screenSpacePanning
+                minDistance={2}
+                maxDistance={Math.max(8, Math.max(fieldWidth, fieldDepth) * 4)}
+                maxPolarAngle={Math.PI / 2 - 0.015}
+            />
         );
-        const progress = transition.elapsed / transition.duration;
-        const eased = progress * progress * (3 - 2 * progress);
-
-        camera.position.lerpVectors(
-            transition.fromPosition,
-            transition.toPosition,
-            eased,
-        );
-        controls.target.lerpVectors(
-            transition.fromTarget,
-            transition.toTarget,
-            eased,
-        );
-        camera.fov = THREE.MathUtils.lerp(
-            transition.fromFov,
-            transition.toFov,
-            eased,
-        );
-        camera.updateProjectionMatrix();
-        controls.update();
-
-        if (progress >= 1) transitionRef.current = null;
-    });
-
-    return (
-        <OrbitControls
-            ref={controlsRef}
-            makeDefault
-            enablePan
-            enableRotate
-            enableZoom
-            enableDamping
-            dampingFactor={0.12}
-            onStart={() => {
-                transitionRef.current = null;
-            }}
-            screenSpacePanning
-            minDistance={2}
-            maxDistance={Math.max(8, Math.max(fieldWidth, fieldDepth) * 4)}
-            maxPolarAngle={Math.PI / 2 - 0.015}
-        />
-    );
-}
+    },
+);
 
 const MemoizedCameraRig = memo(CameraRig);
 
@@ -574,9 +642,12 @@ function MarcherFormation({
 export default function ThreeDViewer() {
     const [cameraPreset, setCameraPreset] = useState<CameraPreset>("pressBox");
     const [preferences, setPreferences] = useState(loadViewerPreferences);
+    const [directorEnabled, setDirectorEnabled] = useState(false);
+    const cameraRigRef = useRef<CameraRigHandle>(null);
     const databaseReady = useDatabaseReady();
     const queryClient = useQueryClient();
     const { selectedPage } = useSelectedPage()!;
+    const isPlaying = useIsPlaying()?.isPlaying ?? false;
     const { beats, pages } = useTimingObjects();
     const { uiSettings } = useUiSettingsStore();
     const diagnosticsEnabled = usePerformanceDiagnosticsStore(
@@ -603,13 +674,95 @@ export default function ThreeDViewer() {
         placeholderData: keepPreviousData,
     });
     const { data: marcherTimelines } = useManyCoordinateData(pages);
+    const { data: workspaceSettings } = useQuery(
+        workspaceSettingsQueryOptions(databaseReady),
+    );
+    const { mutate: updateWorkspaceSettings } = useMutation(
+        updateWorkspaceSettingsMutationOptions(queryClient),
+    );
+    const directorShots = useMemo(
+        () =>
+            sortDirectorCameraShots(
+                workspaceSettings?.directorCameraShots ?? [],
+            ),
+        [workspaceSettings?.directorCameraShots],
+    );
 
     useEffect(() => {
-        window.localStorage.setItem(
-            VIEWER_PREFERENCES_KEY,
-            JSON.stringify(preferences),
-        );
+        saveViewerPreferences(preferences);
     }, [preferences]);
+
+    useEffect(() => {
+        if (directorShots.length === 0) setDirectorEnabled(false);
+    }, [directorShots.length]);
+
+    const saveDirectorShots = useCallback(
+        (shots: DirectorCameraShot[]) => {
+            const currentSettings =
+                queryClient.getQueryData<WorkspaceSettings>(
+                    workspaceSettingsKeys.detail(),
+                ) ?? workspaceSettings;
+            if (!currentSettings) return;
+            const nextSettings: WorkspaceSettings = {
+                ...currentSettings,
+                directorCameraShots: sortDirectorCameraShots(shots),
+            };
+            queryClient.setQueryData(
+                workspaceSettingsKeys.detail(),
+                nextSettings,
+            );
+            updateWorkspaceSettings(nextSettings);
+        },
+        [queryClient, updateWorkspaceSettings, workspaceSettings],
+    );
+
+    const captureDirectorShot = useCallback(() => {
+        const state = cameraRigRef.current?.capture();
+        if (!state || !selectedPage) return;
+        const liveTime = isPlaying ? getLivePlaybackPosition() : NaN;
+        const timeSeconds = Number.isFinite(liveTime)
+            ? Math.max(0, liveTime)
+            : selectedPage.timestamp;
+        const existingIndex = directorShots.findIndex(
+            (shot) => Math.abs(shot.timeSeconds - timeSeconds) < 0.05,
+        );
+        if (existingIndex >= 0) {
+            const nextShots = [...directorShots];
+            nextShots[existingIndex] = {
+                ...nextShots[existingIndex],
+                ...state,
+                timeSeconds,
+            };
+            saveDirectorShots(nextShots);
+            return;
+        }
+
+        if (directorShots.length >= MAX_DIRECTOR_CAMERA_SHOTS) return;
+
+        const baseName = `Page ${selectedPage.name}`;
+        const pageShotCount = directorShots.filter(
+            (shot) =>
+                shot.name === baseName ||
+                shot.name.startsWith(`${baseName} shot `),
+        ).length;
+        saveDirectorShots([
+            ...directorShots,
+            {
+                id: crypto.randomUUID(),
+                name: `${baseName}${
+                    pageShotCount > 0 ? ` shot ${pageShotCount + 1}` : ""
+                }`,
+                timeSeconds,
+                transitionSeconds: directorShots.length === 0 ? 0 : 2,
+                ...state,
+            },
+        ]);
+    }, [directorShots, isPlaying, saveDirectorShots, selectedPage]);
+
+    const previewDirectorShot = useCallback((shot: DirectorCameraShot) => {
+        setDirectorEnabled(false);
+        requestAnimationFrame(() => cameraRigRef.current?.flyTo(shot, 0.9));
+    }, []);
 
     if (!fieldProperties || !selectedPage) {
         return (
@@ -688,9 +841,13 @@ export default function ThreeDViewer() {
                     />
                 )}
                 <MemoizedCameraRig
+                    ref={cameraRigRef}
                     preset={cameraPreset}
                     fieldWidth={width}
                     fieldDepth={depth}
+                    directorEnabled={directorEnabled}
+                    directorShots={directorShots}
+                    pausedTimeSeconds={selectedPage.timestamp}
                 />
                 {diagnosticsEnabled && <PerformanceSampler />}
             </ThreeCanvas>
@@ -712,7 +869,10 @@ export default function ThreeDViewer() {
                                 key={preset}
                                 type="button"
                                 aria-pressed={cameraPreset === preset}
-                                onClick={() => setCameraPreset(preset)}
+                                onClick={() => {
+                                    setDirectorEnabled(false);
+                                    setCameraPreset(preset);
+                                }}
                                 className={clsx(
                                     "rounded-6 px-10 py-6 text-sm transition-colors",
                                     cameraPreset === preset
@@ -846,10 +1006,39 @@ export default function ThreeDViewer() {
                         Labels {preferences.showLabels ? "on" : "off"}
                     </button>
                 </div>
+
+                <DirectorPanel
+                    shots={directorShots}
+                    enabled={directorEnabled}
+                    canCapture={
+                        !!workspaceSettings &&
+                        directorShots.length < MAX_DIRECTOR_CAMERA_SHOTS
+                    }
+                    selectedPageName={selectedPage.name}
+                    onToggle={() => setDirectorEnabled((current) => !current)}
+                    onCapture={captureDirectorShot}
+                    onPreview={previewDirectorShot}
+                    onDelete={(shotId) =>
+                        saveDirectorShots(
+                            directorShots.filter((shot) => shot.id !== shotId),
+                        )
+                    }
+                    onTransitionChange={(shotId, transitionSeconds) =>
+                        saveDirectorShots(
+                            directorShots.map((shot) =>
+                                shot.id === shotId
+                                    ? { ...shot, transitionSeconds }
+                                    : shot,
+                            ),
+                        )
+                    }
+                />
             </div>
 
             <p className="bg-bg-1/80 text-text/80 pointer-events-none absolute bottom-6 left-6 rounded-md px-8 py-4 text-xs backdrop-blur-sm">
-                Drag to orbit · right-drag to pan · scroll to zoom
+                {directorEnabled
+                    ? `Director camera · ${directorShots.length} saved shots`
+                    : "Drag to orbit · right-drag to pan · scroll to zoom"}
             </p>
         </div>
     );

@@ -1,5 +1,9 @@
 import * as z from "zod";
 import { MIN_TEMPO_BPM } from "@/global/classes/Beat";
+import {
+    directorCameraShotSchema,
+    MAX_DIRECTOR_CAMERA_SHOTS,
+} from "@/utilities/directorCamera";
 
 export const workspaceSettingsSchema = z.object({
     defaultBeatsPerMeasure: z.int().positive().default(4),
@@ -12,6 +16,10 @@ export const workspaceSettingsSchema = z.object({
     designer: z.string().optional(),
     client: z.string().optional(),
     activity: z.string().optional(),
+    directorCameraShots: z
+        .array(directorCameraShotSchema)
+        .max(MAX_DIRECTOR_CAMERA_SHOTS)
+        .default([]),
 
     // Mobile export settings
     otmProductionId: z.preprocess(
@@ -36,6 +44,7 @@ export const defaultWorkspaceSettings: WorkspaceSettings = {
     designer: undefined,
     client: undefined,
     activity: undefined,
+    directorCameraShots: [],
     otmProductionId: undefined,
 };
 

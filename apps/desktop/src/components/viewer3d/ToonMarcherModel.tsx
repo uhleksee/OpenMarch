@@ -156,6 +156,7 @@ export default function ToonMarcherModel({
     motionRef,
     gaitRef,
     instrumentPose,
+    playbackActive,
 }: MarcherModelProps) {
     const lowerBodyRef = useRef<THREE.Group>(null);
     const leftArmRef = useRef<THREE.Group>(null);
@@ -163,7 +164,8 @@ export default function ToonMarcherModel({
     const leftLegRef = useRef<THREE.Group>(null);
     const rightLegRef = useRef<THREE.Group>(null);
     const motionBlendRef = useRef(0);
-    const { isPlaying } = useIsPlaying()!;
+    const playbackContext = useIsPlaying();
+    const isPlaying = playbackActive ?? playbackContext?.isPlaying ?? false;
     const variation = getVariation(variantSeed);
     const isClassic = uniformStyle === "classic";
     const isModern = uniformStyle === "modern";

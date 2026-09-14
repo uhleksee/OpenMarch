@@ -58,6 +58,7 @@ import {
     generateDrillChartExportSVGs,
     getFieldPropertiesImageElement,
 } from "./utils/svg-generator";
+import { getFieldPropertiesImage } from "@/global/classes/FieldProperties";
 import { useUiSettingsStore } from "@/stores/UiSettingsStore";
 import { notesHtmlToPlainText, truncateHtmlNotes } from "@/utilities/notesText";
 import Constants from "@/global/Constants";
@@ -92,6 +93,7 @@ import {
 import { useTheme } from "@/context/ThemeContext";
 import { useSidebarModalStore } from "@/stores/SidebarModalStore";
 import { MobileExportModalContents } from "@/components/mobile/MobileExportModal";
+import { loadViewerPreferences } from "@/components/viewer3d/viewer3d.preferences";
 
 const mobileExportScreenshotUrls = [2, 3, 4, 5].map(
     (index) => `https://assets.openmarch.com/desktop/mobile-wipe/${index}.webp`,
@@ -1248,6 +1250,7 @@ const VIDEO_RESOLUTIONS = [
     { label: "4K", width: 3840, height: 2160 },
 ] as const;
 const VIDEO_FRAME_RATES = [30, 60] as const;
+type VideoRenderMode = "2d" | "3d";
 
 // eslint-disable-next-line max-lines-per-function
 function VideoExport() {
@@ -1323,6 +1326,7 @@ function VideoExport() {
 
     const [resolution, setResolution] = useState("1080p");
     const [frameRate, setFrameRate] = useState(60);
+    const [renderMode, setRenderMode] = useState<VideoRenderMode>("2d");
     const [videoTheme, setVideoTheme] = useState<VideoTheme>(() =>
         theme === "light" ? "light" : "dark",
     );
@@ -1491,7 +1495,8 @@ function VideoExport() {
         fieldProperties &&
         pages.length > 1 &&
         marchers &&
-        marchers.length > 0
+        marchers.length > 0 &&
+        (renderMode === "2d" || marcherPages)
     );
 
     // eslint-disable-next-line max-lines-per-function
@@ -1507,13 +1512,16 @@ function VideoExport() {
                 fieldProperties,
                 t("exportCoordinates.fieldPropertiesNotLoaded"),
             );
+            if (renderMode === "3d") {
+                assert(marcherPages, "Marcher page data is not loaded");
+            }
 
             const { width, height } = VIDEO_RESOLUTIONS.find(
                 (r) => r.label === resolution,
             )!;
 
             // Full-show timelines (not the playback window) and audio
-            const [timelineMaps, audioFile, backgroundImage] =
+            const [timelineMaps, audioFile, backgroundImage, fieldImage] =
                 await Promise.all([
                     Promise.all(
                         pages.map((page) =>
@@ -1523,7 +1531,12 @@ function VideoExport() {
                         ),
                     ),
                     AudioFile.getSelectedAudioFile(),
-                    getFieldPropertiesImageElement(),
+                    renderMode === "2d"
+                        ? getFieldPropertiesImageElement()
+                        : Promise.resolve(undefined),
+                    renderMode === "3d"
+                        ? getFieldPropertiesImage()
+                        : Promise.resolve(null),
                 ]);
             assert(audioFile.data, "Audio file has no data");
 
@@ -1544,6 +1557,17 @@ function VideoExport() {
                 fps: frameRate,
                 videoTheme,
                 fieldFraming,
+                renderMode,
+                threeD:
+                    renderMode === "3d"
+                        ? {
+                              directorCameraShots:
+                                  workspaceSettings?.directorCameraShots ?? [],
+                              viewerPreferences: loadViewerPreferences(),
+                              fieldImage,
+                              marcherPages: marcherPages!,
+                          }
+                        : undefined,
                 overlay: overlayEnabled
                     ? { measures, options: overlayOptions, placement }
                     : undefined,
@@ -1595,6 +1619,7 @@ function VideoExport() {
         t,
         marchersLoaded,
         fieldProperties,
+        renderMode,
         resolution,
         pages,
         queryClient,
@@ -1604,6 +1629,8 @@ function VideoExport() {
         uiSettings.gridLines,
         uiSettings.halfLines,
         workspaceSettings?.audioOffsetSeconds,
+        workspaceSettings?.directorCameraShots,
+        marcherPages,
         frameRate,
         videoTheme,
         measures,
@@ -1616,6 +1643,50 @@ function VideoExport() {
     return (
         <div className="flex flex-col gap-16">
             <Form.Root className="grid grid-cols-2 gap-24">
+                <Form.Field
+                    name="renderMode"
+                    className="col-span-2 flex w-full items-center justify-between gap-12"
+                >
+                    <Form.Label className="text-body">Video view</Form.Label>
+                    <ToggleGroup.Root
+                        type="single"
+                        value={renderMode}
+                        onValueChange={(value) => {
+                            if (value) setRenderMode(value as VideoRenderMode);
+                        }}
+                        aria-label="Video view"
+                        className="bg-fg-2 border-stroke flex rounded-full border p-4"
+                    >
+                        <ToggleGroup.Item
+                            value="2d"
+                            className="text-text text-body data-[state=on]:bg-accent data-[state=on]:text-accent-foreground rounded-full px-16 py-8 outline-hidden duration-150"
+                        >
+                            2D
+                        </ToggleGroup.Item>
+                        <ToggleGroup.Item
+                            value="3d"
+                            className="text-text text-body data-[state=on]:bg-accent data-[state=on]:text-accent-foreground rounded-full px-16 py-8 outline-hidden duration-150"
+                        >
+                            3D Director
+                        </ToggleGroup.Item>
+                    </ToggleGroup.Root>
+                </Form.Field>
+
+                {renderMode === "3d" && (
+                    <div className="bg-fg-2 border-stroke rounded-6 col-span-2 flex flex-col gap-4 border px-12 py-10">
+                        <p className="text-body">
+                            {(workspaceSettings?.directorCameraShots.length ??
+                                0) === 0
+                                ? "No Director shots saved. The export will use the press-box camera."
+                                : `${workspaceSettings?.directorCameraShots.length ?? 0} Director ${workspaceSettings?.directorCameraShots.length === 1 ? "shot" : "shots"} saved for this show.`}
+                        </p>
+                        <p className="text-sub text-text/60">
+                            Uses your current 3D venue, lighting, and uniform
+                            settings.
+                        </p>
+                    </div>
+                )}
+
                 <Form.Field
                     name="resolution"
                     className="flex w-full items-center justify-between gap-12"
@@ -1720,86 +1791,97 @@ function VideoExport() {
                     isLoading={previewLoading}
                     loadingLabel={t("exportCoordinates.videoPreviewLoading")}
                 />
-                <div className="flex flex-col gap-12">
-                    <h6 className="text-sub text-text/80">
-                        <T keyName="exportCoordinates.videoFieldFraming" />
-                    </h6>
-                    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-16 gap-y-12">
-                        <span className="text-body whitespace-nowrap">
-                            <T keyName="exportCoordinates.videoFieldScale" />
-                        </span>
-                        <Slider
-                            value={[fieldFraming.scale]}
-                            min={MIN_FIELD_SCALE}
-                            max={MAX_FIELD_SCALE}
-                            step={0.05}
-                            onValueChange={([scale]) =>
-                                setFieldFraming(
-                                    clampFieldFraming({
-                                        ...fieldFraming,
-                                        scale,
-                                    }),
-                                )
-                            }
-                            className="relative flex h-5 w-full touch-none items-center select-none"
-                        />
-                        <span className="text-sub text-text/60 w-[3rem] text-right tabular-nums">
-                            {fieldFraming.scale.toFixed(2)}×
-                        </span>
+                {renderMode === "3d" && (
+                    <p className="text-sub text-text/60">
+                        This preview is for positioning the information overlay.
+                        The exported video uses the 3D scene and Director
+                        camera.
+                    </p>
+                )}
+                {renderMode === "2d" && (
+                    <div className="flex flex-col gap-12">
+                        <h6 className="text-sub text-text/80">
+                            <T keyName="exportCoordinates.videoFieldFraming" />
+                        </h6>
+                        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-16 gap-y-12">
+                            <span className="text-body whitespace-nowrap">
+                                <T keyName="exportCoordinates.videoFieldScale" />
+                            </span>
+                            <Slider
+                                value={[fieldFraming.scale]}
+                                min={MIN_FIELD_SCALE}
+                                max={MAX_FIELD_SCALE}
+                                step={0.05}
+                                onValueChange={([scale]) =>
+                                    setFieldFraming(
+                                        clampFieldFraming({
+                                            ...fieldFraming,
+                                            scale,
+                                        }),
+                                    )
+                                }
+                                className="relative flex h-5 w-full touch-none items-center select-none"
+                            />
+                            <span className="text-sub text-text/60 w-[3rem] text-right tabular-nums">
+                                {fieldFraming.scale.toFixed(2)}×
+                            </span>
 
-                        <span className="text-body whitespace-nowrap">
-                            <T keyName="exportCoordinates.videoFieldOffsetX" />
-                        </span>
-                        <Slider
-                            value={[fieldFraming.offsetX]}
-                            min={MIN_FIELD_OFFSET}
-                            max={MAX_FIELD_OFFSET}
-                            step={0.01}
-                            onValueChange={([offsetX]) =>
-                                setFieldFraming(
-                                    clampFieldFraming({
-                                        ...fieldFraming,
-                                        offsetX,
-                                    }),
-                                )
-                            }
-                            className="relative flex h-5 w-full touch-none items-center select-none"
-                        />
-                        <span className="text-sub text-text/60 w-[3rem] text-right tabular-nums">
-                            {fieldFraming.offsetX.toFixed(2)}
-                        </span>
+                            <span className="text-body whitespace-nowrap">
+                                <T keyName="exportCoordinates.videoFieldOffsetX" />
+                            </span>
+                            <Slider
+                                value={[fieldFraming.offsetX]}
+                                min={MIN_FIELD_OFFSET}
+                                max={MAX_FIELD_OFFSET}
+                                step={0.01}
+                                onValueChange={([offsetX]) =>
+                                    setFieldFraming(
+                                        clampFieldFraming({
+                                            ...fieldFraming,
+                                            offsetX,
+                                        }),
+                                    )
+                                }
+                                className="relative flex h-5 w-full touch-none items-center select-none"
+                            />
+                            <span className="text-sub text-text/60 w-[3rem] text-right tabular-nums">
+                                {fieldFraming.offsetX.toFixed(2)}
+                            </span>
 
-                        <span className="text-body whitespace-nowrap">
-                            <T keyName="exportCoordinates.videoFieldOffsetY" />
-                        </span>
-                        <Slider
-                            value={[fieldFraming.offsetY]}
-                            min={MIN_FIELD_OFFSET}
-                            max={MAX_FIELD_OFFSET}
-                            step={0.01}
-                            onValueChange={([offsetY]) =>
-                                setFieldFraming(
-                                    clampFieldFraming({
-                                        ...fieldFraming,
-                                        offsetY,
-                                    }),
-                                )
+                            <span className="text-body whitespace-nowrap">
+                                <T keyName="exportCoordinates.videoFieldOffsetY" />
+                            </span>
+                            <Slider
+                                value={[fieldFraming.offsetY]}
+                                min={MIN_FIELD_OFFSET}
+                                max={MAX_FIELD_OFFSET}
+                                step={0.01}
+                                onValueChange={([offsetY]) =>
+                                    setFieldFraming(
+                                        clampFieldFraming({
+                                            ...fieldFraming,
+                                            offsetY,
+                                        }),
+                                    )
+                                }
+                                className="relative flex h-5 w-full touch-none items-center select-none"
+                            />
+                            <span className="text-sub text-text/60 w-[3rem] text-right tabular-nums">
+                                {fieldFraming.offsetY.toFixed(2)}
+                            </span>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-fit"
+                            onClick={() =>
+                                setFieldFraming(DEFAULT_FIELD_FRAMING)
                             }
-                            className="relative flex h-5 w-full touch-none items-center select-none"
-                        />
-                        <span className="text-sub text-text/60 w-[3rem] text-right tabular-nums">
-                            {fieldFraming.offsetY.toFixed(2)}
-                        </span>
+                        >
+                            <T keyName="exportCoordinates.videoFieldResetFraming" />
+                        </Button>
                     </div>
-                    <Button
-                        type="button"
-                        variant="secondary"
-                        className="w-fit"
-                        onClick={() => setFieldFraming(DEFAULT_FIELD_FRAMING)}
-                    >
-                        <T keyName="exportCoordinates.videoFieldResetFraming" />
-                    </Button>
-                </div>
+                )}
                 {(overlayEnabled || !previewLoading) && (
                     <p className="text-sub text-text/60">
                         <T keyName="exportCoordinates.videoOverlayPreviewHint" />

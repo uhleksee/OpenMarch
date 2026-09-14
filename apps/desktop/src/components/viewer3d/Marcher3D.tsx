@@ -11,6 +11,8 @@ export interface MarcherModelProps {
     motionRef: MarcherMotionRef;
     gaitRef: MarcherGaitRef;
     instrumentPose: InstrumentPose;
+    /** Explicit playback state for deterministic offscreen rendering. */
+    playbackActive?: boolean;
 }
 
 export interface MarcherMotionRef {
@@ -25,7 +27,7 @@ export interface MarcherGaitRef {
 
 export type MarcherModelComponent = ComponentType<MarcherModelProps>;
 
-interface Marcher3DProps {
+export interface Marcher3DProps {
     marcherId: number;
     drillNumber: string;
     section: string;
@@ -34,6 +36,7 @@ interface Marcher3DProps {
     uniformStyle: UniformStyle;
     motionRef: MarcherMotionRef;
     gaitRef: MarcherGaitRef;
+    playbackActive?: boolean;
     model?: MarcherModelComponent;
 }
 
@@ -46,6 +49,7 @@ function Marcher3D({
     uniformStyle,
     motionRef,
     gaitRef,
+    playbackActive,
     model: Model = ToonMarcherModel,
 }: Marcher3DProps) {
     return (
@@ -57,6 +61,7 @@ function Marcher3D({
                 motionRef={motionRef}
                 gaitRef={gaitRef}
                 instrumentPose={getInstrumentPose(section)}
+                playbackActive={playbackActive}
             />
             {labelVisible && (
                 <Html

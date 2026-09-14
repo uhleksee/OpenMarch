@@ -18,6 +18,7 @@ interface Field3DProps {
     showHalfLines: boolean;
     fieldImage: Uint8Array | null;
     venue: ResolvedVenue;
+    onFieldImageReady?: () => void;
 }
 
 const MAX_GRID_LINES_PER_AXIS = 512;
@@ -241,6 +242,7 @@ export default function Field3D({
     showHalfLines,
     fieldImage,
     venue,
+    onFieldImageReady,
 }: Field3DProps) {
     const { width, depth } = getFieldWorldDimensions(fieldProperties);
     const fieldStepWorldSize = getFieldStepWorldSize(fieldProperties);
@@ -449,6 +451,7 @@ export default function Field3D({
                         fieldDepth={depth}
                         mode={fieldProperties.imageFillOrFit}
                         opacity={fieldProperties.backgroundImageOpacity}
+                        onReady={onFieldImageReady}
                     />
                 )}
             {showGrid && (

@@ -43,6 +43,7 @@ interface FieldSurfaceImageProps {
     fieldDepth: number;
     mode: "fill" | "fit";
     opacity: number;
+    onReady?: () => void;
 }
 
 export default function FieldSurfaceImage({
@@ -51,6 +52,7 @@ export default function FieldSurfaceImage({
     fieldDepth,
     mode,
     opacity,
+    onReady,
 }: FieldSurfaceImageProps) {
     const maxAnisotropy = useThree((state) =>
         state.gl.capabilities.getMaxAnisotropy(),
@@ -86,6 +88,7 @@ export default function FieldSurfaceImage({
             });
             setTexture(loadedTexture);
             releaseObjectUrl();
+            onReady?.();
 
             // The canvas is now the texture source, so allow the browser to
             // release the original full-resolution decode immediately.
@@ -100,6 +103,7 @@ export default function FieldSurfaceImage({
             if (!disposed) {
                 console.warn("Unable to decode the 3D field image");
                 releaseObjectUrl();
+                onReady?.();
             }
         };
         image.src = objectUrl;
@@ -114,7 +118,7 @@ export default function FieldSurfaceImage({
             loadedTexture?.dispose();
             releaseObjectUrl();
         };
-    }, [imageBytes, maxAnisotropy]);
+    }, [imageBytes, maxAnisotropy, onReady]);
 
     const layout = useMemo(
         () =>
