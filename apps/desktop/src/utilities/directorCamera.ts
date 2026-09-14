@@ -14,6 +14,7 @@ export const directorCameraShotSchema = z.object({
     position: cameraVectorSchema,
     target: cameraVectorSchema,
     fov: z.number().finite().min(10).max(120),
+    rollDegrees: z.number().finite().default(0),
 });
 
 export type DirectorCameraShot = z.infer<typeof directorCameraShotSchema>;
@@ -24,12 +25,14 @@ export interface DirectorCameraState {
     position: [number, number, number];
     target: [number, number, number];
     fov: number;
+    rollDegrees: number;
 }
 
 const shotState = (shot: DirectorCameraShot): DirectorCameraState => ({
     position: [...shot.position],
     target: [...shot.target],
     fov: shot.fov,
+    rollDegrees: shot.rollDegrees,
 });
 
 export const sortDirectorCameraShots = (
@@ -56,6 +59,24 @@ const lerpVector = (
 
 const smoothStep = (progress: number) =>
     progress * progress * (3 - 2 * progress);
+
+/**
+ * Interpolate camera roll over the shortest arc. Keeping this separate from
+ * the position interpolation avoids a full revolution when shots cross the
+ * -180/180-degree seam.
+ */
+export const interpolateCameraRollDegrees = (
+    startDegrees: number,
+    endDegrees: number,
+    progress: number,
+): number => {
+    if (progress <= 0) return startDegrees;
+    if (progress >= 1) return endDegrees;
+
+    const shortestDelta =
+        ((((endDegrees - startDegrees + 180) % 360) + 360) % 360) - 180;
+    return startDegrees + shortestDelta * progress;
+};
 
 /**
  * Resolve a deterministic director camera at a show timestamp. A shot's cue
@@ -114,6 +135,11 @@ export function getDirectorCameraStateAtTimeFromSortedShots(
             ),
             target: lerpVector(previous.target, destination.target, progress),
             fov: lerp(previous.fov, destination.fov, progress),
+            rollDegrees: interpolateCameraRollDegrees(
+                previous.rollDegrees,
+                destination.rollDegrees,
+                progress,
+            ),
         };
     }
 

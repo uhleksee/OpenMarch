@@ -10,9 +10,11 @@ interface DirectorPanelProps {
     shots: DirectorCameraShot[];
     enabled: boolean;
     canCapture: boolean;
+    rollDegrees: number;
     selectedPageName: string;
     onToggle: () => void;
     onCapture: () => void;
+    onRollChange: (rollDegrees: number) => void;
     onPreview: (shot: DirectorCameraShot) => void;
     onDelete: (shotId: string) => void;
     onTransitionChange: (shotId: string, transitionSeconds: number) => void;
@@ -22,9 +24,11 @@ export default function DirectorPanel({
     shots,
     enabled,
     canCapture,
+    rollDegrees,
     selectedPageName,
     onToggle,
     onCapture,
+    onRollChange,
     onPreview,
     onDelete,
     onTransitionChange,
@@ -61,6 +65,61 @@ export default function DirectorPanel({
                     </button>
                 </div>
 
+                <div className="border-stroke bg-bg-2 rounded-4 border p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <label
+                            htmlFor="director-camera-roll"
+                            className="font-medium"
+                        >
+                            Camera roll
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <output
+                                htmlFor="director-camera-roll"
+                                className="min-w-10 text-right font-mono tabular-nums"
+                            >
+                                {rollDegrees > 0 ? "+" : ""}
+                                {rollDegrees}°
+                            </output>
+                            <button
+                                type="button"
+                                disabled={enabled || rollDegrees === 0}
+                                onClick={() => onRollChange(0)}
+                                className="border-stroke hover:bg-fg-1 rounded-4 border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                                Level
+                            </button>
+                        </div>
+                    </div>
+                    <input
+                        id="director-camera-roll"
+                        type="range"
+                        min={-45}
+                        max={45}
+                        step={1}
+                        value={rollDegrees}
+                        disabled={enabled}
+                        aria-valuetext={
+                            rollDegrees === 0
+                                ? "Level"
+                                : `${Math.abs(rollDegrees)} degrees ${
+                                      rollDegrees < 0
+                                          ? "counter-clockwise"
+                                          : "clockwise"
+                                  }`
+                        }
+                        onChange={(event) =>
+                            onRollChange(Number(event.target.value))
+                        }
+                        className="accent-accent w-full disabled:cursor-not-allowed disabled:opacity-45"
+                    />
+                    <p className="text-text/50 mt-2">
+                        {enabled
+                            ? "Director playback controls roll from each saved shot."
+                            : "Tilt the live camera. Captured shots remember this angle."}
+                    </p>
+                </div>
+
                 <p className="text-text/60">
                     Capture the current camera at page {selectedPageName}. The
                     glide arrives exactly on each shot’s cue.
@@ -83,6 +142,9 @@ export default function DirectorPanel({
                                     </p>
                                     <p className="text-text/55 font-mono">
                                         {formatDirectorTime(shot.timeSeconds)}
+                                        {" · "}
+                                        {shot.rollDegrees > 0 ? "+" : ""}
+                                        {shot.rollDegrees}°
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2">

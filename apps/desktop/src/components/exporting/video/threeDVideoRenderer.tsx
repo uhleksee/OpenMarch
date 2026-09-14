@@ -101,7 +101,9 @@ const applyCameraState = (
     state: DirectorCameraState,
 ) => {
     camera.position.set(...state.position);
+    camera.up.set(0, 1, 0);
     camera.lookAt(...state.target);
+    camera.rotateZ(THREE.MathUtils.degToRad(state.rollDegrees));
     if (camera.fov !== state.fov) {
         camera.fov = state.fov;
         camera.updateProjectionMatrix();
@@ -496,11 +498,10 @@ export async function createThreeDVideoRenderContext(
             args.viewerPreferences.venue,
             args.fieldProperties,
         );
-        const fallbackCamera = getCameraPresetConfiguration(
-            "pressBox",
-            fieldWidth,
-            fieldDepth,
-        );
+        const fallbackCamera: DirectorCameraState = {
+            ...getCameraPresetConfiguration("pressBox", fieldWidth, fieldDepth),
+            rollDegrees: 0,
+        };
         const directorCameraShots = sortDirectorCameraShots(
             args.directorCameraShots,
         );

@@ -85,6 +85,7 @@ import IndoorArenaEnvironment from "./IndoorArenaEnvironment";
 import DirectorPanel from "./DirectorPanel";
 import {
     getDirectorCameraStateAtTimeFromSortedShots,
+    interpolateCameraRollDegrees,
     MAX_DIRECTOR_CAMERA_SHOTS,
     sortDirectorCameraShots,
     type DirectorCameraShot,
@@ -158,6 +159,7 @@ interface CameraRigProps {
     preset: CameraPreset;
     fieldWidth: number;
     fieldDepth: number;
+    rollDegrees: number;
     directorEnabled: boolean;
     directorShots: DirectorCameraShot[];
     pausedTimeSeconds: number;
@@ -166,6 +168,7 @@ interface CameraRigProps {
 export interface CameraRigHandle {
     capture: () => DirectorCameraState | null;
     flyTo: (state: DirectorCameraState, durationSeconds?: number) => void;
+    setRoll: (rollDegrees: number) => void;
 }
 
 interface CameraTransition {
@@ -177,6 +180,18 @@ interface CameraTransition {
     toTarget: THREE.Vector3;
     fromFov: number;
     toFov: number;
+    fromRollDegrees: number;
+    toRollDegrees: number;
+}
+
+function applyCameraRoll(
+    camera: THREE.PerspectiveCamera,
+    target: THREE.Vector3,
+    rollDegrees: number,
+) {
+    camera.up.set(0, 1, 0);
+    camera.lookAt(target);
+    camera.rotateZ(THREE.MathUtils.degToRad(rollDegrees));
 }
 
 const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
@@ -185,6 +200,7 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
             preset,
             fieldWidth,
             fieldDepth,
+            rollDegrees,
             directorEnabled,
             directorShots,
             pausedTimeSeconds,
@@ -194,6 +210,7 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
         const { camera } = useThree();
         const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
         const transitionRef = useRef<CameraTransition | null>(null);
+        const appliedRollDegreesRef = useRef(rollDegrees);
         const initializedRef = useRef(false);
         const isPlaying = useIsPlaying()?.isPlaying ?? false;
         const configuration = useMemo(
@@ -219,6 +236,8 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
                     toTarget: new THREE.Vector3(...state.target),
                     fromFov: camera.fov,
                     toFov: state.fov,
+                    fromRollDegrees: appliedRollDegreesRef.current,
+                    toRollDegrees: state.rollDegrees,
                 };
                 initializedRef.current = true;
             },
@@ -239,9 +258,22 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
                         position: camera.position.toArray(),
                         target: controls.target.toArray(),
                         fov: camera.fov,
+                        rollDegrees: appliedRollDegreesRef.current,
                     };
                 },
                 flyTo: startTransition,
+                setRoll: (nextRollDegrees) => {
+                    const controls = controlsRef.current;
+                    if (
+                        !controls ||
+                        !(camera instanceof THREE.PerspectiveCamera)
+                    )
+                        return;
+                    transitionRef.current = null;
+                    controls.update();
+                    applyCameraRoll(camera, controls.target, nextRollDegrees);
+                    appliedRollDegreesRef.current = nextRollDegrees;
+                },
             }),
             [camera, startTransition],
         );
@@ -264,6 +296,7 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
                 position: configuration.position,
                 target: configuration.target,
                 fov: configuration.fov,
+                rollDegrees: 0,
             };
             if (!initializedRef.current) {
                 camera.position.set(...presetState.position);
@@ -271,6 +304,12 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
                 controls.target.set(...presetState.target);
                 camera.updateProjectionMatrix();
                 controls.update();
+                applyCameraRoll(
+                    camera,
+                    controls.target,
+                    presetState.rollDegrees,
+                );
+                appliedRollDegreesRef.current = presetState.rollDegrees;
                 initializedRef.current = true;
                 return;
             }
@@ -301,15 +340,24 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
                 if (!directorState) return;
                 camera.position.set(...directorState.position);
                 controls.target.set(...directorState.target);
-                camera.lookAt(...directorState.target);
+                applyCameraRoll(
+                    camera,
+                    controls.target,
+                    directorState.rollDegrees,
+                );
                 camera.fov = directorState.fov;
                 camera.updateProjectionMatrix();
+                appliedRollDegreesRef.current = directorState.rollDegrees;
                 initializedRef.current = true;
                 return;
             }
 
             const transition = transitionRef.current;
-            if (!transition) return;
+            if (!transition) {
+                applyCameraRoll(camera, controls.target, rollDegrees);
+                appliedRollDegreesRef.current = rollDegrees;
+                return;
+            }
             transition.elapsed = Math.min(
                 transition.duration,
                 transition.elapsed + delta,
@@ -334,6 +382,13 @@ const CameraRig = forwardRef<CameraRigHandle, CameraRigProps>(
             );
             camera.updateProjectionMatrix();
             controls.update();
+            const transitionRollDegrees = interpolateCameraRollDegrees(
+                transition.fromRollDegrees,
+                transition.toRollDegrees,
+                eased,
+            );
+            applyCameraRoll(camera, controls.target, transitionRollDegrees);
+            appliedRollDegreesRef.current = transitionRollDegrees;
 
             if (progress >= 1) transitionRef.current = null;
         });
@@ -641,6 +696,7 @@ function MarcherFormation({
 
 export default function ThreeDViewer() {
     const [cameraPreset, setCameraPreset] = useState<CameraPreset>("pressBox");
+    const [cameraRollDegrees, setCameraRollDegrees] = useState(0);
     const [preferences, setPreferences] = useState(loadViewerPreferences);
     const [directorEnabled, setDirectorEnabled] = useState(false);
     const cameraRigRef = useRef<CameraRigHandle>(null);
@@ -761,7 +817,15 @@ export default function ThreeDViewer() {
 
     const previewDirectorShot = useCallback((shot: DirectorCameraShot) => {
         setDirectorEnabled(false);
-        requestAnimationFrame(() => cameraRigRef.current?.flyTo(shot, 0.9));
+        requestAnimationFrame(() => {
+            cameraRigRef.current?.flyTo(shot, 0.9);
+            setCameraRollDegrees(shot.rollDegrees);
+        });
+    }, []);
+
+    const changeCameraRoll = useCallback((rollDegrees: number) => {
+        cameraRigRef.current?.setRoll(rollDegrees);
+        setCameraRollDegrees(rollDegrees);
     }, []);
 
     if (!fieldProperties || !selectedPage) {
@@ -845,6 +909,7 @@ export default function ThreeDViewer() {
                     preset={cameraPreset}
                     fieldWidth={width}
                     fieldDepth={depth}
+                    rollDegrees={cameraRollDegrees}
                     directorEnabled={directorEnabled}
                     directorShots={directorShots}
                     pausedTimeSeconds={selectedPage.timestamp}
@@ -871,6 +936,7 @@ export default function ThreeDViewer() {
                                 aria-pressed={cameraPreset === preset}
                                 onClick={() => {
                                     setDirectorEnabled(false);
+                                    setCameraRollDegrees(0);
                                     setCameraPreset(preset);
                                 }}
                                 className={clsx(
@@ -1014,9 +1080,14 @@ export default function ThreeDViewer() {
                         !!workspaceSettings &&
                         directorShots.length < MAX_DIRECTOR_CAMERA_SHOTS
                     }
+                    rollDegrees={cameraRollDegrees}
                     selectedPageName={selectedPage.name}
-                    onToggle={() => setDirectorEnabled((current) => !current)}
+                    onToggle={() => {
+                        if (directorEnabled) setCameraRollDegrees(0);
+                        setDirectorEnabled((current) => !current);
+                    }}
                     onCapture={captureDirectorShot}
+                    onRollChange={changeCameraRoll}
                     onPreview={previewDirectorShot}
                     onDelete={(shotId) =>
                         saveDirectorShots(
